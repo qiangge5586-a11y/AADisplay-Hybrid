@@ -45,7 +45,11 @@ object DisplayResolutionStore {
         cached?.let { return it }
         synchronized(lock) {
             cached?.let { return it }
-            val loaded = loadSettings(contentResolver) ?: loadFile() ?: Size(0, 0)
+            // Settings.Global may exist but contain no values; treat that as absent so
+            // the system_server properties fallback is still consulted.
+            val fromSettings = loadSettings(contentResolver)
+                ?.takeIf { it.width != 0 || it.height != 0 }
+            val loaded = fromSettings ?: loadFile() ?: Size(0, 0)
             val safe = if (isValid(loaded.width, loaded.height)) loaded else Size(0, 0)
             cached = safe
             return safe
@@ -92,7 +96,7 @@ object DisplayResolutionStore {
         return try {
             val w = Settings.Global.getString(cr, SETTINGS_WIDTH)?.toIntOrNull() ?: 0
             val h = Settings.Global.getString(cr, SETTINGS_HEIGHT)?.toIntOrNull() ?: 0
-            Size(w, h)
+            if (w == 0 && h == 0) null else Size(w, h)
         } catch (t: Throwable) {
             Log.w(TAG, "load settings failed", t); null
         }
