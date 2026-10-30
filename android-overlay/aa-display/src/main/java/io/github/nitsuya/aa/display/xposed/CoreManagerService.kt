@@ -1,0 +1,1635 @@
+package io.github.nitsuya.aa.display.xposed
+
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.ContextParams
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import android.view.MotionEvent
+import android.view.Surface
+import io.github.nitsuya.aa.display.BuildConfig
+import io.github.nitsuya.aa.display.model.RecentTask
+import io.github.nitsuya.aa.display.ui.aa.split.HidShellGeometry
+import io.github.nitsuya.aa.display.ui.aa.split.HidSplitLayout
+import io.github.nitsuya.aa.display.ui.aa.split.SplitDisplayController
+import io.github.nitsuya.aa.display.ui.aa.split.SplitPane
+import io.github.nitsuya.aa.display.ui.window.DisplaySessionPolicy
+import io.github.nitsuya.aa.display.util.AABroadcastConst
+import io.github.nitsuya.aa.display.util.AaSystemBroadcast
+import io.github.nitsuya.aa.display.util.AvMediaArbiter
+import io.github.nitsuya.aa.display.util.CoolwalkRailStore
+import io.github.nitsuya.aa.display.util.DisplayDpiStore
+import io.github.nitsuya.aa.display.util.DisplayResolutionStore
+import io.github.nitsuya.aa.display.util.DisplayProfileSettle
+import io.github.nitsuya.aa.display.xposed.cluster.ClusterArtStore
+import io.github.nitsuya.aa.display.xposed.cluster.ClusterLyricMirror
+import android.graphics.Point
+import android.view.Display
+import android.view.KeyEvent
+import io.github.nitsuya.aa.display.xposed.carplay.CarPlayAudioCapture
+import io.github.nitsuya.aa.display.xposed.carplay.CarPlayBootArm
+import io.github.nitsuya.aa.display.xposed.carplay.CarPlayProcessBoost
+import io.github.nitsuya.aa.display.xposed.hook.PanePresentationGuard
+import io.github.nitsuya.aa.display.xposed.hook.PaneDisplayGroupForce
+import io.github.nitsuya.aa.display.xposed.hook.PhoneHidRedirect
+import io.github.nitsuya.aa.display.xposed.hook.aa.coolwalk.CoolwalkRailMath
+import io.github.nitsuya.aa.display.xposed.hook.aa.coolwalk.RailPhase
+import io.github.nitsuya.aa.display.xposed.hook.VdImeDisplayPin
+import io.github.nitsuya.aa.display.xposed.hook.VdMetricsMirror
+import io.github.nitsuya.aa.display.xposed.hook.VdOrientationFill
+import io.github.nitsuya.aa.display.xposed.util.Instances
+import io.github.nitsuya.aa.display.xposed.util.log
+import io.github.nitsuya.aa.display.xposed.util.logDebug
+import io.github.duzhaokun123.template.utils.runIO
+import io.github.duzhaokun123.template.utils.runMain
+import io.github.qauxv.ui.CommonContextWrapper
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
+
+class CoreManagerService private constructor() : ICoreManager.Stub() {
+
+    @Volatile
+    private var coolwalkReconnectEpochMs = 0L
+
+    companion object {
+        const val TAG = "CoreManagerService"
+        private const val ACCESS_REJECTED = 2
+        private const val CONNECTION_POLICY_FORBIDDEN = 0
+        private const val PROFILE_PBAP = 6
+        private const val PROFILE_MAP = 9
+        private const val ACTION_CONNECTION_ACCESS_REQUEST =
+            "android.bluetooth.device.action.CONNECTION_ACCESS_REQUEST"
+        private const val EXTRA_ACCESS_REQUEST_TYPE =
+            "android.bluetooth.device.extra.ACCESS_REQUEST_TYPE"
+        private const val REQUEST_PHONEBOOK = 2
+        private const val REQUEST_MESSAGE = 3
+        private const val REQUEST_SIM = 4
+        private val headUnitAddresses = ConcurrentHashMap.newKeySet<String>()
+        private var headUnitAccessReceiver: BroadcastReceiver? = null
+
+        @Volatile
+        var carPlaySessionLive: Boolean = false
+            private set
+
+        val instance: CoreManagerService by lazy {
+            CoreManagerService().apply {
+                log(TAG, "AADisplay service initialized")
+            }
+        }
+
+        @SuppressLint("StaticFieldLeak")
+        private lateinit var systemContextHost: Context
+        val hasSystemContext: Boolean
+            get() = ::systemContextHost.isInitialized
+        var systemContext: Context
+            get() = systemContextHost
+            set(value) {
+                if (value.params == null) {
+                    log(TAG, "SystemContext.params is null; using empty ContextParams")
+                }
+                systemContextHost = value.createContext(value.params ?: ContextParams.Builder().build())
+            }
+
+        private var mSessionPolicy: DisplaySessionPolicy? = null
+        private var mSplitController: SplitDisplayController? = null
+        private var mDisplayCreateInProgress = false
+
+        private data class DisplayProfile(
+            val width: Int,
+            val height: Int,
+            val densityDpi: Int
+        ) {
+            val isLandscape: Boolean
+                get() = width >= height
+        }
+
+        private var mLockedDisplayProfile: DisplayProfile? = null
+        /** Last HU-reported density from gearhead before manual override. */
+        @Volatile
+        private var mLastReportedHostDensityDpi = 0
+        /** Soft-reconnect: rail VD may appear shortly after first create call. */
+        private const val RAIL_SETTLE_RETRY_MS = 450L
+        private val mMainHandler = Handler(Looper.getMainLooper())
+        private val mRailSettleRetryRunnable = Runnable { retryRailAwareSettle() }
+
+        /** Binder setters must finish before the client reads back (see MainActivity DPI UI). */
+        private fun runMainSync(block: () -> Unit) {
+            if (Looper.myLooper() == Looper.getMainLooper()) {
+                block()
+                return
+            }
+            val latch = CountDownLatch(1)
+            var error: Throwable? = null
+            mMainHandler.post {
+                try {
+                    block()
+                } catch (t: Throwable) {
+                    error = t
+                } finally {
+                    latch.countDown()
+                }
+            }
+            latch.await()
+            error?.let { throw it }
+        }
+
+        private fun persistVdDensityDpiLocked(dpi: Int) {
+            if (!hasSystemContext) {
+                log(TAG, "setVdDensityDpi aborted: systemContext not initialized")
+                return
+            }
+            val normalized = DisplayDpiStore.normalize(dpi)
+            val ok = DisplayDpiStore.save(normalized, systemContext.contentResolver)
+            if (!ok) {
+                log(TAG, "setVdDensityDpi persist failed dpi=$normalized")
+            }
+            applyDensityOverrideLive()
+            applyResolutionOverrideLive()
+        }
+
+        private fun sanitizeDisplayProfile(width: Int, height: Int, densityDpi: Int): DisplayProfile {
+            return DisplayProfile(
+                width = width.coerceAtLeast(1),
+                height = height.coerceAtLeast(1),
+                densityDpi = densityDpi.coerceAtLeast(1)
+            )
+        }
+
+        private fun contentResolverOrNull() =
+            if (hasSystemContext) systemContext.contentResolver else null
+
+        /**
+         * Prefer live DisplayManager HU density over the client-reported value.
+         * AaMainFragment's DisplayContext metrics often stay at the previous dpi across
+         * emulator / HU density changes until something forces a configuration refresh;
+         * system_server can already see VirtualDevice / CarActivity at the new dpi.
+         */
+        private fun resolveReportedHostDensityDpi(clientReported: Int): Int {
+            // CarPlay Host paints at ENCODE_UI_DENSITY_DPI (1dp≈1px on the encode canvas).
+            // Do not replace with a leftover AA / gearhead HU dpi — that desyncs
+            // SplitPane.dividerPx between GL strips and VD buffers → left black gutter.
+            if (carPlaySessionLive && clientReported > 0) {
+                return clientReported
+            }
+            val observed = if (hasSystemContext) {
+                DisplayProfileSettle.observeHuReportedDensityDpi(systemContext)
+            } else {
+                0
+            }
+            val host = when {
+                observed > 0 && clientReported > 0 && observed != clientReported -> {
+                    logDebug(
+                        TAG,
+                        "host dpi client=$clientReported observed=$observed (using observed)",
+                    )
+                    observed
+                }
+                observed > 0 -> observed
+                else -> clientReported
+            }
+            if (host > 0) {
+                mLastReportedHostDensityDpi = host
+                if (hasSystemContext) {
+                    DisplayDpiStore.saveLastHuReported(host, systemContext.contentResolver)
+                }
+            }
+            return host
+        }
+
+        private fun resolveEffectiveDensityDpi(reportedHostDpi: Int): Int {
+            val override = DisplayDpiStore.loadConfigured(contentResolverOrNull())
+            if (override > 0) return override
+            // CarPlay: no HU density negotiate — stick to Host-reported encode dpi
+            // (ENCODE_UI_DENSITY_DPI). Do not fall back to a leftover AA gearhead value.
+            if (carPlaySessionLive) {
+                return reportedHostDpi.coerceAtLeast(1)
+            }
+            val host = reportedHostDpi.takeIf { it > 0 }
+                ?: mLastReportedHostDensityDpi.takeIf { it > 0 }
+                ?: DisplayDpiStore.loadLastHuReported(contentResolverOrNull())
+            return host.coerceAtLeast(1)
+        }
+
+        /** Apply configured override / latest host dpi to a live AA / CarPlay session. */
+        private fun applyDensityOverrideLive() {
+            val controller = mSplitController ?: return
+            val profile = mLockedDisplayProfile ?: return
+            val configured = DisplayDpiStore.loadConfigured(contentResolverOrNull())
+            val newDpi = if (configured > 0) {
+                configured
+            } else if (carPlaySessionLive) {
+                // No AA HU leftover: keep current profile (Host already sent encode default).
+                profile.densityDpi.coerceAtLeast(1)
+            } else {
+                val host = mLastReportedHostDensityDpi.takeIf { it > 0 }
+                    ?: DisplayDpiStore.loadLastHuReported(contentResolverOrNull())
+                host.coerceAtLeast(1)
+            }
+            if (newDpi == profile.densityDpi && controller.mDensityDpi == newDpi) return
+            mLockedDisplayProfile = profile.copy(densityDpi = newDpi)
+            logDebug(
+                TAG,
+                "vdDensityDpi live apply: ${profile.densityDpi} -> $newDpi " +
+                    "configured=$configured carPlay=$carPlaySessionLive " +
+                    "controller=${controller.mDensityDpi}",
+            )
+            controller.onReconnected(profile.width, profile.height, newDpi)
+        }
+
+        /**
+         * Apply the configured render-buffer size without mutating the negotiated HU profile.
+         * Coolwalk rail/touch geometry continues to use mLockedDisplayProfile.
+         */
+        private fun applyResolutionOverrideLive() {
+            val controller = mSplitController ?: return
+            val hostProfile = mLockedDisplayProfile ?: return
+            val configured = DisplayResolutionStore.load(contentResolverOrNull())
+            val width = if (configured.isAutomatic) hostProfile.width else configured.width
+            val height = if (configured.isAutomatic) hostProfile.height else configured.height
+            if (controller.mWidth == width && controller.mHeight == height) return
+            logDebug(
+                TAG,
+                "vdResolution live apply: ${controller.mWidth}x${controller.mHeight} -> ${width}x$height " +
+                    "configured=${configured.width}x${configured.height}",
+            )
+            controller.onReconnected(width, height, controller.mDensityDpi)
+        }
+
+        private fun cancelRailSettleRetry() {
+            mMainHandler.removeCallbacks(mRailSettleRetryRunnable)
+        }
+
+        private fun scheduleRailSettleRetry() {
+            cancelRailSettleRetry()
+            mMainHandler.postDelayed(mRailSettleRetryRunnable, RAIL_SETTLE_RETRY_MS)
+        }
+
+        /**
+         * After soft reconnect, GhFacetBar may appear (or be starved) a beat after the
+         * first create. Re-settle so we neither stay at full-HU with a live 80px strip
+         * nor stay at HU−rail after the strip is gone.
+         */
+        private fun retryRailAwareSettle() {
+            val current = mLockedDisplayProfile ?: return
+            if (mSplitController == null) return
+            if (!hasSystemContext) return
+            // CarPlay encode canvas == reported size; Coolwalk FacetBar math must not
+            // shrink the split profile mid-session (left pillar / bottom crop on HU).
+            if (carPlaySessionLive) return
+            val railW = resolveRailWidthPx()
+            val fullW = resolveObservedFullHuWidthPx(current.width, current.height)
+            val settled = DisplayProfileSettle.settle(
+                DisplayProfileSettle.Size(current.width, current.height, current.densityDpi),
+                railWidthPx = railW,
+                fullHuWidthPx = fullW,
+            )
+            val next = sanitizeDisplayProfile(settled.width, settled.height, settled.densityDpi)
+            if (next != current) {
+                mLockedDisplayProfile = next
+                logDebug(
+                    TAG,
+                    "displayProfile relocked(rail-settle): ${current.width}*${current.height} -> " +
+                        "${next.width}*${next.height} rail=$railW full=$fullW"
+                )
+                if (next.width > current.width &&
+                    DisplayProfileSettle.isContentSlotVsFull(current.width, next.width)
+                ) {
+                    instance.notifyCoolwalkFullBleed()
+                }
+                mSplitController?.onReconnected(next.width, next.height, next.densityDpi)
+            }
+            // Profile may already be full HU while Car presentation VD stays at content slot
+            // (DrawingSpec created before reclaim) → facet-bar-sized right gutter.
+            maybeNotifyStuckContentSlotPresentation(mLockedDisplayProfile ?: next)
+        }
+
+        private var lastStuckPresentationNotifyUptimeMs = 0L
+
+        /**
+         * When AaDisplayActivity presentation is still HU−rail but split profile is full HU,
+         * poke full-bleed so gearhead relaunches with a widened DrawingSpec.
+         */
+        private fun maybeNotifyStuckContentSlotPresentation(profile: DisplayProfile) {
+            if (!hasSystemContext) return
+            if (resolveRailWidthPx() > 1) return
+            val presentationW = DisplayProfileSettle.observeAaDisplayPresentationWidthPx(systemContext)
+            if (presentationW <= 0) return
+            if (!DisplayProfileSettle.isContentSlotVsFull(presentationW, profile.width)) return
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastStuckPresentationNotifyUptimeMs < 2_000L) return
+            lastStuckPresentationNotifyUptimeMs = now
+            log(
+                TAG,
+                "CoolwalkRail stuck presentation ${presentationW}px vs profile ${profile.width}px → full-bleed",
+            )
+            instance.notifyStuckContentSlotFullBleed()
+        }
+
+        private fun resolveRailWidthPx(): Int {
+            if (!hasSystemContext) return 0
+            val liveRail = DisplayProfileSettle.observeLiveRailWidthPx(systemContext)
+            // Compositor FacetBar strip is the only profile input — never touchRailWidthPx
+            // or cached FullBleed phase (stale after reconnect blacks the left gutter).
+            return if (liveRail <= 1) 0 else liveRail
+        }
+
+        private fun resolveObservedFullHuWidthPx(reportedWidth: Int, reportedHeight: Int): Int {
+            val snap = CoolwalkRailStore.effectiveSnapshot(
+                if (hasSystemContext) systemContext.contentResolver else null,
+            )
+            val observed = DisplayProfileSettle.observeFullHuWidthPx(
+                systemContext,
+                reportedWidth.coerceAtLeast(1),
+                reportedHeight,
+            )
+            val measured = observed.coerceAtLeast(reportedWidth)
+            return CoolwalkRailMath.pickConnectionFullHuWidth(
+                snap.fullHuWidthPx,
+                snap.layoutHeightPx,
+                measured,
+                reportedHeight,
+                snap.touchRailWidthPx,
+            )
+        }
+
+        /**
+         * Single settle rule (see [DisplayProfileSettle]): live rail strip → HU−rail;
+         * otherwise full HU. Replaces the old grow-immediate / shrink-confirm tug-of-war.
+         */
+        private fun resolveDisplayProfile(
+            width: Int,
+            height: Int,
+            densityDpi: Int,
+            newSession: Boolean
+        ): DisplayProfile {
+            val reported = sanitizeDisplayProfile(width, height, densityDpi)
+            // CarPlay Host / encoder size is the accessory panel (e.g. Audi 1412×654).
+            // Coolwalk FacetBar settle would subtract a leftover AA rail and leave a
+            // left black strip + aspect mismatch vs the screen stream.
+            if (carPlaySessionLive) {
+                cancelRailSettleRetry()
+                val current = mLockedDisplayProfile
+                if (current != reported) {
+                    mLockedDisplayProfile = reported
+                    logDebug(
+                        TAG,
+                        "displayProfile locked(carplay): ${reported.width}*${reported.height}," +
+                            "${reported.densityDpi}" +
+                            if (current != null) {
+                                " (was ${current.width}*${current.height})"
+                            } else {
+                                ""
+                            },
+                    )
+                }
+                return reported
+            }
+            val railW = resolveRailWidthPx()
+            val fullW = if (hasSystemContext) {
+                resolveObservedFullHuWidthPx(reported.width, reported.height)
+            } else {
+                reported.width
+            }
+            val settledSize = DisplayProfileSettle.settle(
+                DisplayProfileSettle.Size(reported.width, reported.height, reported.densityDpi),
+                railWidthPx = railW,
+                fullHuWidthPx = fullW,
+            )
+            val candidate = sanitizeDisplayProfile(
+                settledSize.width,
+                settledSize.height,
+                settledSize.densityDpi,
+            )
+            val current = mLockedDisplayProfile
+            if (current == null) {
+                mLockedDisplayProfile = candidate
+                logDebug(
+                    TAG,
+                    "displayProfile locked: ${candidate.width}*${candidate.height},${candidate.densityDpi} " +
+                        "(reported=${reported.width} rail=$railW full=$fullW)"
+                )
+                if (!newSession) scheduleRailSettleRetry()
+                return candidate
+            }
+            if (newSession) {
+                cancelRailSettleRetry()
+                if (current != candidate) {
+                    mLockedDisplayProfile = candidate
+                    logDebug(
+                        TAG,
+                        "displayProfile relocked(new-session): ${current.width}*${current.height} -> " +
+                            "${candidate.width}*${candidate.height} rail=$railW full=$fullW"
+                    )
+                }
+                return mLockedDisplayProfile!!
+            }
+            if (current.isLandscape != candidate.isLandscape) {
+                cancelRailSettleRetry()
+                mLockedDisplayProfile = candidate
+                logDebug(
+                    TAG,
+                    "displayProfile relocked(orientation): ${current.width}*${current.height} -> " +
+                        "${candidate.width}*${candidate.height}"
+                )
+                return candidate
+            }
+            if (current != candidate) {
+                mLockedDisplayProfile = candidate
+                logDebug(
+                    TAG,
+                    "displayProfile relocked(settle): ${current.width}*${current.height} -> " +
+                        "${candidate.width}*${candidate.height} " +
+                        "reported=${reported.width} rail=$railW full=$fullW"
+                )
+                if (candidate.width > current.width &&
+                    DisplayProfileSettle.isContentSlotVsFull(current.width, candidate.width)
+                ) {
+                    instance.notifyCoolwalkFullBleed()
+                }
+            }
+            // Rail / starve often lands after the first soft-reconnect create; one retry.
+            scheduleRailSettleRetry()
+            return mLockedDisplayProfile!!
+        }
+
+        private fun clearDisplayProfileLock() {
+            mLockedDisplayProfile?.also {
+                logDebug(TAG, "displayProfile cleared: ${it.width}*${it.height},${it.densityDpi}")
+            }
+            cancelRailSettleRetry()
+            mLockedDisplayProfile = null
+        }
+
+        fun systemReady() {
+            if (!hasSystemContext) {
+                log(TAG, "systemReady skipped: systemContext not initialized")
+                return
+            }
+            Instances.init(systemContext)
+            // Isolate each install: one OEM-missing method must not skip the rest.
+            runCatching { PanePresentationGuard.ensureHooked() }
+                .onFailure { log(TAG, "PanePresentationGuard.ensureHooked failed", it) }
+            runCatching { VdImeDisplayPin.ensureHooked() }
+                .onFailure { log(TAG, "VdImeDisplayPin.ensureHooked failed", it) }
+            runCatching { VdOrientationFill.ensureHooked() }
+                .onFailure { log(TAG, "VdOrientationFill.ensureHooked failed", it) }
+            runCatching { VdMetricsMirror.ensureHooked() }
+                .onFailure { log(TAG, "VdMetricsMirror.ensureHooked failed", it) }
+            runCatching { PhoneHidRedirect.ensureHooked() }
+                .onFailure { log(TAG, "PhoneHidRedirect.ensureHooked failed", it) }
+            runCatching { PaneDisplayGroupForce.ensureResolved() }
+                .onFailure { log(TAG, "PaneDisplayGroupForce.ensureResolved failed", it) }
+            runCatching { registerAaUiBroadcastReceivers() }
+                .onFailure { log(TAG, "registerAaUiBroadcastReceivers failed", it) }
+            runCatching { ClusterLyricMirror.start(systemContext) }
+                .onFailure { log(TAG, "ClusterLyricMirror.start failed", it) }
+            runCatching { CarPlayAudioCapture.install(systemContext) }
+                .onFailure { log(TAG, "CarPlayAudioCapture.install failed", it) }
+            runCatching { CarPlayProcessBoost.install(systemContext) }
+                .onFailure { log(TAG, "CarPlayProcessBoost.install failed", it) }
+            runCatching { CarPlayBootArm.install(systemContext) }
+                .onFailure { log(TAG, "CarPlayBootArm.install failed", it) }
+        }
+
+        private fun registerAaUiBroadcastReceivers() {
+            if (aaUiBroadcastReceiver != null || !hasSystemContext) return
+            val receiver = object : android.content.BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: android.content.Intent?) {
+                    when (intent?.action) {
+                        AABroadcastConst.ACTION_AA_UI_RAIL_CONSUME -> {
+                            setAaUiShellCapture(
+                                intent.getBooleanExtra(
+                                    AABroadcastConst.EXTRA_AA_UI_RAIL_CONSUME,
+                                    false,
+                                ),
+                            )
+                        }
+                        AABroadcastConst.ACTION_HID_SHELL_GEOMETRY -> {
+                            val w = intent.getIntExtra(AABroadcastConst.EXTRA_SHELL_PARENT_W, 0)
+                            val h = intent.getIntExtra(AABroadcastConst.EXTRA_SHELL_PARENT_H, 0)
+                            if (w <= 0 || h <= 0) return
+                            mSplitController?.updateHidShellGeometry(
+                                HidShellGeometry(
+                                    parentW = w,
+                                    parentH = h,
+                                    sideBySide = intent.getBooleanExtra(
+                                        AABroadcastConst.EXTRA_SHELL_SIDEBYSIDE,
+                                        true,
+                                    ),
+                                    fullscreenPane = intent.getIntExtra(
+                                        AABroadcastConst.EXTRA_FULLSCREEN_PANE,
+                                        SplitPane.FULLSCREEN_NONE,
+                                    ),
+                                    imeChipL = intent.getIntExtra(AABroadcastConst.EXTRA_IME_CHIP_L, 0),
+                                    imeChipT = intent.getIntExtra(AABroadcastConst.EXTRA_IME_CHIP_T, 0),
+                                    imeChipR = intent.getIntExtra(AABroadcastConst.EXTRA_IME_CHIP_R, 0),
+                                    imeChipB = intent.getIntExtra(AABroadcastConst.EXTRA_IME_CHIP_B, 0),
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+            try {
+                systemContext.registerReceiver(
+                    receiver,
+                    android.content.IntentFilter().apply {
+                        addAction(AABroadcastConst.ACTION_AA_UI_RAIL_CONSUME)
+                        addAction(AABroadcastConst.ACTION_HID_SHELL_GEOMETRY)
+                    },
+                    Context.RECEIVER_EXPORTED,
+                )
+                aaUiBroadcastReceiver = receiver
+            } catch (e: Throwable) {
+                log(TAG, "registerAaUiBroadcastReceivers failed", e)
+            }
+        }
+
+        fun isAaVirtualDisplay(displayId: Int): Boolean {
+            return mSplitController?.isAaVirtualDisplay(displayId) == true
+        }
+
+        /** Cheap gate for WM hooks: false when no AA pane VDs exist. */
+        fun hasAaVirtualDisplays(): Boolean = mSplitController != null
+
+        /** AA UI attached (not Delay Destroy). Used by [PhoneHidRedirect]. */
+        fun isAaSessionLive(): Boolean =
+            mSplitController != null && mSessionPolicy?.isAaSessionLive == true
+
+        /** CarPlay Source session live (reported by the app). Used by [PhoneHidRedirect]. */
+        fun isCarPlaySessionLive(): Boolean =
+            mSplitController != null && carPlaySessionLive
+
+        /**
+         * True while app picker / Recents covers the shell.
+         * Rail / HID → [touchAaDisplay]; [SplitLockedPeelController] must not consume.
+         * Driven by [ACTION_AA_UI_RAIL_CONSUME].
+         */
+        @Volatile
+        var aaUiShellCapture: Boolean = false
+            private set
+
+        fun clearAaUiShellCapture() {
+            setAaUiShellCapture(false)
+        }
+
+        fun setAaUiShellCapture(capture: Boolean) {
+            if (aaUiShellCapture == capture) return
+            aaUiShellCapture = capture
+            logDebug(TAG, "aaUiShellCapture=$capture")
+            if (capture) {
+                mSplitController?.lockedPeel?.reset()
+                // Presentation needs ALWAYS_UNLOCKED / own group so FacetBar→touchAaDisplay
+                // reaches Recents under phone keyguard (panes already have this at create).
+                val aaUiId = mSplitController?.aaUiDisplayId() ?: Display.INVALID_DISPLAY
+                if (aaUiId != Display.INVALID_DISPLAY && aaUiId != Display.DEFAULT_DISPLAY) {
+                    mSplitController?.lockedPeel?.applyAaUiDisplayKeyguardPolicy(
+                        aaUiId,
+                        "shell-capture",
+                    )
+                    mSplitController?.mHandler?.postDelayed({
+                        if (!aaUiShellCapture) return@postDelayed
+                        val id = mSplitController?.aaUiDisplayId() ?: return@postDelayed
+                        if (id == Display.INVALID_DISPLAY || id == Display.DEFAULT_DISPLAY) {
+                            return@postDelayed
+                        }
+                        mSplitController?.lockedPeel?.applyAaUiDisplayKeyguardPolicy(
+                            id,
+                            "shell-capture-reassert",
+                        )
+                    }, 750L)
+                }
+            }
+            PhoneHidRedirect.onShellCaptureChanged(capture)
+        }
+
+        private var aaUiBroadcastReceiver: android.content.BroadcastReceiver? = null
+
+        fun hidAaUiDisplayId(): Int =
+            mSplitController?.aaUiDisplayId() ?: Display.INVALID_DISPLAY
+
+        fun hidTargetDisplayId(): Int =
+            mSplitController?.resolveHidInjectionDisplayId() ?: Display.INVALID_DISPLAY
+
+        fun hidPrimaryDisplayId(): Int =
+            mSplitController?.primaryDisplayId?.takeIf { it != Display.INVALID_DISPLAY }
+                ?: Display.INVALID_DISPLAY
+
+        fun hidSecondaryDisplayId(): Int =
+            mSplitController?.secondaryDisplayId?.takeIf { it != Display.INVALID_DISPLAY }
+                ?: Display.INVALID_DISPLAY
+
+        fun hidSplitLayout(): HidSplitLayout? = mSplitController?.hidSplitLayout()
+
+        /** BT mouse click on shell 「收起键盘」 — do not inject into the pane VD. */
+        fun hideImeFromHid() {
+            runCatching { mSplitController?.hideIme() }
+        }
+
+        fun focusHidPane(pane: Int): Boolean {
+            val c = mSplitController ?: return false
+            if (!SplitPane.isValid(pane)) return false
+            c.setFocusedPane(pane)
+            return true
+        }
+
+        fun injectHidTouchOnPane(
+            pane: Int,
+            action: Int,
+            x: Float,
+            y: Float,
+            downTime: Long,
+            eventTime: Long,
+        ): Boolean {
+            return try {
+                if (action == MotionEvent.ACTION_DOWN) {
+                    mSessionPolicy?.onVirtualDisplayUserInteraction()
+                }
+                mSplitController?.onHidTouchOnPane(pane, action, x, y, downTime, eventTime) == true
+            } catch (e: Throwable) {
+                logDebug(TAG, "injectHidTouchOnPane: ${e.message}")
+                false
+            }
+        }
+
+        fun injectHidScrollOnPane(
+            pane: Int,
+            x: Float,
+            y: Float,
+            vScroll: Float,
+            hScroll: Float,
+        ): Boolean {
+            return try {
+                mSessionPolicy?.onVirtualDisplayUserInteraction()
+                mSplitController?.onHidScrollOnPane(pane, x, y, vScroll, hScroll) == true
+            } catch (e: Throwable) {
+                logDebug(TAG, "injectHidScrollOnPane: ${e.message}")
+                false
+            }
+        }
+
+        fun injectHidAaUiTouch(
+            action: Int,
+            x: Float,
+            y: Float,
+            downTime: Long,
+            eventTime: Long,
+        ): Boolean {
+            return try {
+                if (action == MotionEvent.ACTION_DOWN) {
+                    mSessionPolicy?.onVirtualDisplayUserInteraction()
+                }
+                val event = MotionEvent.obtain(downTime, eventTime, action, x, y, 0).apply {
+                    source = android.view.InputDevice.SOURCE_TOUCHSCREEN
+                }
+                try {
+                    mSplitController?.onTouchAaDisplay(event)
+                    true
+                } finally {
+                    event.recycle()
+                }
+            } catch (e: Throwable) {
+                logDebug(TAG, "injectHidAaUiTouch: ${e.message}")
+                false
+            }
+        }
+
+        /** Adjust split ratio by [delta] (−0.05 / +0.05) on the **shell**, then settle VD. */
+        fun nudgeHidSplitRatio(delta: Float): Boolean {
+            return try {
+                val c = mSplitController ?: return false
+                if (SplitPane.isFullscreenPane(c.mFullscreenPane)) return false
+                // Accumulate while UI may still be applying the previous broadcast.
+                val base = pendingHidShellRatio ?: c.mRatio
+                val next = SplitPane.clampRatio(base + delta)
+                if (kotlin.math.abs(next - base) < 0.001f) return true
+                pendingHidShellRatio = next
+                // Do not call setSplitRatio here — that resizes VDs while TextureViews lag
+                // (shell ratio stays old). Ask AaMainFragment to layout + settle.
+                if (!hasSystemContext) return false
+                AaSystemBroadcast.toAaDisplay(
+                    systemContext,
+                    android.content.Intent(AABroadcastConst.ACTION_HID_APPLY_SPLIT_RATIO)
+                        .putExtra(AABroadcastConst.EXTRA_RATIO, next),
+                )
+                mSessionPolicy?.onVirtualDisplayUserInteraction()
+                true
+            } catch (e: Throwable) {
+                logDebug(TAG, "nudgeHidSplitRatio: ${e.message}")
+                false
+            }
+        }
+
+        /** Cleared when UI settles [ACTION_HID_APPLY_SPLIT_RATIO] via setSplitRatio. */
+        @Volatile
+        private var pendingHidShellRatio: Float? = null
+
+        fun clearPendingHidShellRatio() {
+            pendingHidShellRatio = null
+        }
+
+        fun showHidRecentTask(): Boolean {
+            return try {
+                if (!hasSystemContext) return false
+                // Shell overlay must steal HID before the UI broadcast round-trip.
+                setAaUiShellCapture(true)
+                PhoneHidRedirect.revealCursorForKeyboardRecent()
+                AaSystemBroadcast.toAaDisplay(
+                    systemContext,
+                    android.content.Intent(AABroadcastConst.ACTION_SHOW_RECENT_TASK),
+                )
+                mSessionPolicy?.onVirtualDisplayUserInteraction()
+                true
+            } catch (e: Throwable) {
+                logDebug(TAG, "showHidRecentTask: ${e.message}")
+                false
+            }
+        }
+
+        fun swapHidPanes(): Boolean {
+            return try {
+                if (!hasSystemContext) return false
+                // Same path as divider tap — optimistic shell layout in AaMainFragment.
+                AaSystemBroadcast.toAaDisplay(
+                    systemContext,
+                    android.content.Intent(AABroadcastConst.ACTION_SPLIT_SWAP),
+                )
+                mSessionPolicy?.onVirtualDisplayUserInteraction()
+                true
+            } catch (e: Throwable) {
+                logDebug(TAG, "swapHidPanes: ${e.message}")
+                false
+            }
+        }
+
+        /** Phone BT mouse — shell cursor tip in presentation coords (AA UI pulls each frame). */
+        @Volatile private var hidCursorVisible = false
+        @Volatile private var hidCursorX = 0f
+        @Volatile private var hidCursorY = 0f
+        @Volatile private var hidCursorGen = 0
+        /** Locked fullscreen peel preview — UI pulls via [hidCursorOverlaySnapshot]. */
+        @Volatile private var lockedPeelPreviewActive = false
+        @Volatile private var lockedPeelPreviewRatio = 0.5f
+        /** Locked peel tap-flip — broadcast is slow under keyguard; AA UI pulls each ~16ms. */
+        @Volatile private var lockedFullscreenFlipSeq = 0
+        @Volatile private var lockedFullscreenFlipPane = SplitPane.FULLSCREEN_NONE
+
+        fun publishHidCursorState(visible: Boolean, x: Float = 0f, y: Float = 0f) {
+            hidCursorVisible = visible
+            if (visible) {
+                hidCursorX = x
+                hidCursorY = y
+            }
+            hidCursorGen++
+        }
+
+        fun publishLockedPeelPreview(active: Boolean, ratio: Float = 0.5f) {
+            lockedPeelPreviewActive = active
+            if (active) lockedPeelPreviewRatio = ratio
+            hidCursorGen++
+        }
+
+        fun publishLockedFullscreenFlip(pane: Int) {
+            lockedFullscreenFlipPane = pane
+            lockedFullscreenFlipSeq++
+            hidCursorGen++
+        }
+
+        fun hidCursorOverlaySnapshot(): FloatArray =
+            floatArrayOf(
+                if (hidCursorVisible) 1f else 0f,
+                hidCursorX,
+                hidCursorY,
+                hidCursorGen.toFloat(),
+                if (lockedPeelPreviewActive) 1f else 0f,
+                lockedPeelPreviewRatio,
+                lockedFullscreenFlipSeq.toFloat(),
+                lockedFullscreenFlipPane.toFloat(),
+            )
+
+        fun displaySizeFor(displayId: Int): Point? {
+            if (displayId < 0) return null
+            return runCatching {
+                val display = Instances.displayManager.getDisplay(displayId)
+                    ?: return@runCatching null
+                val point = Point()
+                @Suppress("DEPRECATION")
+                display.getRealSize(point)
+                if (point.x <= 0 || point.y <= 0) {
+                    @Suppress("DEPRECATION")
+                    display.getSize(point)
+                }
+                point.takeIf { it.x > 0 && it.y > 0 }
+            }.getOrNull()
+        }
+
+        fun injectHidKeyEvent(event: KeyEvent): Boolean {
+            return try {
+                mSessionPolicy?.onVirtualDisplayUserInteraction()
+                mSplitController?.onHidKeyEvent(event) == true
+            } catch (e: Throwable) {
+                logDebug(TAG, "injectHidKeyEvent: ${e.message}")
+                false
+            }
+        }
+
+        fun injectHidAaUiKeyEvent(event: KeyEvent): Boolean {
+            return try {
+                mSessionPolicy?.onVirtualDisplayUserInteraction()
+                mSplitController?.onHidKeyEventToAaDisplay(event) == true
+            } catch (e: Throwable) {
+                logDebug(TAG, "injectHidAaUiKeyEvent: ${e.message}")
+                false
+            }
+        }
+
+        fun panePackageForDisplay(displayId: Int): String? {
+            val controller = mSplitController ?: return null
+            val pane = when (displayId) {
+                controller.primaryDisplayId -> SplitPane.PRIMARY
+                controller.secondaryDisplayId -> SplitPane.SECONDARY
+                else -> return null
+            }
+            return controller.getPanePackage(pane)
+        }
+
+        fun avStackLayout(): AvMediaArbiter.StackLayout? {
+            return mSplitController?.avStackLayout()
+        }
+
+        fun getDensityDpi(): Int {
+            return mSplitController?.mDensityDpi ?: 0
+        }
+
+        /** Live AA pane buffer size (px) for [displayId]; null when not a split VD. */
+        fun aaPaneSizePx(displayId: Int): Pair<Int, Int>? {
+            val controller = mSplitController ?: return null
+            val sizes = controller.vd.computePaneSizes()
+            return when (displayId) {
+                controller.primaryDisplayId -> sizes.primaryW to sizes.primaryH
+                controller.secondaryDisplayId -> sizes.secondaryW to sizes.secondaryH
+                else -> null
+            }
+        }
+    }
+
+    override fun getVersionName(): String = BuildConfig.VERSION_NAME
+
+    override fun getBuildTime(): Long = BuildConfig.BUILD_TIME
+
+    override fun onCreateSplitDisplay(
+        width: Int,
+        height: Int,
+        densityDpi: Int,
+        ratio: Float,
+        primarySurface: Surface?,
+        secondarySurface: Surface?,
+        listener: IVirtualDisplayCreatedListener
+    ) {
+        runMain {
+            logDebug(
+                TAG,
+                "onCreateSplitDisplay: ${width}x$height,$densityDpi ratio=$ratio " +
+                    "existing=${mSplitController != null}"
+            )
+            if (!hasSystemContext) {
+                log(TAG, "onCreateSplitDisplay aborted: systemContext not initialized")
+                return@runMain
+            }
+            val hostDpi = resolveReportedHostDensityDpi(densityDpi)
+            val effectiveDpi = resolveEffectiveDensityDpi(hostDpi)
+            val profile = resolveDisplayProfile(
+                width = width,
+                height = height,
+                densityDpi = effectiveDpi,
+                newSession = mSplitController == null
+            )
+            mSplitController?.apply {
+                // Soft reconnect: always cancel Delay Destroy and rebind surfaces/policies.
+                mSessionPolicy?.onResume()
+                ClusterLyricMirror.onAaConnected()
+                setPaneSurface(SplitPane.PRIMARY, primarySurface)
+                setPaneSurface(SplitPane.SECONDARY, secondarySurface)
+                // Always kick resize/policies/ensure after surface rebind (null→live).
+                onReconnected(profile.width, profile.height, profile.densityDpi)
+                // Density-only HU changes can leave controller/profile briefly desynced when
+                // the client still echoes a stale dpi; re-assert effective density.
+                applyDensityOverrideLive()
+                // Exit ColorFade if panes went OFF while AA was disconnected.
+                mSessionPolicy?.keepVirtualDisplayAwake("soft-reconnect")
+                // Controller retains live ratio across Delay Destroy; AA echo may lag
+                // LastSplitStore — UI reconciles via SPLIT_STATE_CHANGED.
+                listener.onAvailableDisplay(primaryDisplayId, false)
+                return@runMain
+            }
+            if (mDisplayCreateInProgress) {
+                logDebug(TAG, "onCreateSplitDisplay ignored: create already in progress")
+                return@runMain
+            }
+            mDisplayCreateInProgress = true
+            SplitDisplayController(systemContext) {
+                try {
+                    val controller = this
+                    mSplitController = controller
+                    onConnected(
+                        profile.width,
+                        profile.height,
+                        profile.densityDpi,
+                        SplitPane.clampRatio(ratio),
+                        primarySurface,
+                        secondarySurface,
+                    ) { displayId ->
+                        listener.onAvailableDisplay(displayId, true)
+                        ClusterLyricMirror.onAaConnected()
+                        // Session policy (delay-destroy / keep-awake) after first frame callback.
+                        runMain {
+                            if (mSplitController !== controller) return@runMain
+                            mSessionPolicy?.onDestroyPromptly()
+                            mSessionPolicy = DisplaySessionPolicy(
+                                CommonContextWrapper.createModuleContext(systemContext),
+                                controller,
+                            )
+                            runCatching { VdImeDisplayPin.onAaDisplaysActive(systemContext) }
+                                .onFailure { log(TAG, "VdImeDisplayPin session-active failed", it) }
+                            runCatching { PhoneHidRedirect.onSessionLiveChanged(true) }
+                                .onFailure { log(TAG, "PhoneHidRedirect session-live failed", it) }
+                        }
+                    }
+                } finally {
+                    mDisplayCreateInProgress = false
+                }
+            }
+        }
+    }
+
+    override fun setPaneSurface(pane: Int, surface: Surface?) {
+        runMain {
+            mSplitController?.setPaneSurface(pane, surface)
+        }
+    }
+
+    override fun setSplitRatio(ratio: Float) {
+        clearPendingHidShellRatio()
+        runMain {
+            mSplitController?.setSplitRatio(ratio)
+        }
+    }
+
+    override fun getSplitRatio(): Float {
+        return mSplitController?.mRatio ?: SplitPane.DEFAULT_RATIO
+    }
+
+    override fun setSplitFullscreen(pane: Int) {
+        runMain {
+            mSplitController?.setSplitFullscreen(pane)
+        }
+    }
+
+    override fun getSplitFullscreenPane(): Int {
+        return mSplitController?.mFullscreenPane ?: SplitPane.FULLSCREEN_NONE
+    }
+
+    override fun getPanePackage(pane: Int): String? {
+        return mSplitController?.getPanePackage(pane)
+    }
+
+    override fun setFocusedPane(pane: Int) {
+        mSplitController?.setFocusedPane(pane)
+    }
+
+    override fun getFocusedPane(): Int {
+        return mSplitController?.mFocusedPane ?: SplitPane.PRIMARY
+    }
+
+    override fun swapSplitPanes() {
+        mSplitController?.swapPanesFromUser()
+    }
+
+    override fun onDestroyDisplay() {
+        runMain {
+            if (carPlaySessionLive) {
+                logDebug(
+                    TAG,
+                    "onDestroyDisplay while CarPlay live — Delay Destroy still armed; CP egress may keep using VDs",
+                )
+            }
+            mSplitController?.launch?.flushPersistOnAaDisconnect()
+            val finishTeardown: () -> Unit = {
+                mSplitController?.onDestroy()
+                mSessionPolicy = null
+                mSplitController = null
+                mDisplayCreateInProgress = false
+                clearDisplayProfileLock()
+                CoolwalkRailStore.clear(
+                    if (hasSystemContext) systemContext.contentResolver else null,
+                )
+                runCatching { VdImeDisplayPin.onAaDisplaysInactive(systemContext) }
+                    .onFailure { log(TAG, "VdImeDisplayPin session-inactive failed", it) }
+            }
+            // Session policy is created async after the create callback; destroy before that
+            // must still tear down the controller and clear the profile lock.
+            val policy = mSessionPolicy
+            if (policy != null) {
+                policy.onDestroy(finishTeardown)
+            } else {
+                finishTeardown()
+            }
+        }
+    }
+
+    override fun startActivity(packageName: String, userId: Int) {
+        mSplitController?.startActivityAsync(packageName, userId)
+    }
+
+    override fun startActivityOnPane(packageName: String, userId: Int, pane: Int) {
+        mSplitController?.startActivityOnPaneAsync(packageName, userId, pane)
+    }
+
+    override fun startActivityOnPaneForUser(packageName: String, userId: Int, pane: Int): Boolean {
+        val controller = mSplitController ?: return false
+        return controller.startActivityOnPaneForUser(packageName, userId, pane)
+    }
+
+    override fun getHidCursorOverlay(): FloatArray = hidCursorOverlaySnapshot()
+
+    override fun getClusterArtJpeg(): ByteArray? =
+        if (hasSystemContext) {
+            ClusterArtStore.loadJpegBytes(systemContext.contentResolver)
+        } else {
+            ClusterArtStore.loadJpegBytes()
+        }
+
+    override fun setVdDensityDpi(dpi: Int) {
+        runMainSync { persistVdDensityDpiLocked(dpi) }
+    }
+
+    override fun setVdResolution(width: Int, height: Int): Boolean {
+        if (!DisplayResolutionStore.isValid(width, height) || !hasSystemContext) return false
+        var saved = false
+        runMainSync {
+            saved = DisplayResolutionStore.save(width, height, systemContext.contentResolver)
+            if (saved) applyResolutionOverrideLive()
+        }
+        return saved
+    }
+
+    override fun getVdResolution(): IntArray {
+        val size = DisplayResolutionStore.load(contentResolverOrNull())
+        return intArrayOf(size.width, size.height)
+    }
+
+    override fun getEffectiveVdResolution(): IntArray {
+        val controller = mSplitController
+        if (controller != null) return intArrayOf(controller.mWidth, controller.mHeight)
+        val profile = mLockedDisplayProfile
+        return if (profile != null) intArrayOf(profile.width, profile.height) else intArrayOf(0, 0)
+    }
+
+    override fun getVdDensityDpi(): Int {
+        if (!hasSystemContext) return 0
+        return DisplayDpiStore.loadConfigured(systemContext.contentResolver)
+    }
+
+    override fun getEffectiveVdDensityDpi(): Int = getDensityDpi()
+
+    override fun getReportedHostDensityDpi(): Int {
+        if (mLastReportedHostDensityDpi > 0) return mLastReportedHostDensityDpi
+        if (!hasSystemContext) return 0
+        return DisplayDpiStore.loadLastHuReported(systemContext.contentResolver)
+    }
+
+    override fun moveTaskId(taskId: Int, isVirtualDisplay: Boolean) {
+        mSplitController?.moveTaskIdAsync(taskId, isVirtualDisplay)
+    }
+
+    override fun moveTaskIdToPane(taskId: Int, pane: Int) {
+        mSplitController?.moveTaskIdToPaneAsync(taskId, pane)
+    }
+
+    override fun moveTaskToFront(taskId: Int) {
+        mSplitController?.moveTaskToFrontAsync(taskId)
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun removeTask(taskId: Int) {
+        mSplitController?.removeTaskAsync(taskId)
+    }
+
+    override fun reorderPaneStack(pane: Int, packagesTopToBottom: Array<out String>?): Boolean {
+        val pkgs = packagesTopToBottom ?: return false
+        val controller = mSplitController ?: return false
+        // Synchronous — Recent drag must not reload before stack order is persisted.
+        return controller.reorderPaneStack(pane, pkgs)
+    }
+
+    override fun pressKey(action: Int) {
+        runIO {
+            noteUserInteraction()
+            mSplitController?.onPressKey(action)
+        }
+    }
+
+    override fun touchPane(pane: Int, event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            noteUserInteractionAsync()
+            mSplitController?.setFocusedPane(pane)
+        }
+        mSplitController?.onTouchPane(pane, event)
+    }
+
+    override fun touchPrimaryPane(event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            noteUserInteractionAsync()
+        }
+        mSplitController?.onTouchPrimaryPane(event)
+    }
+
+    override fun touchAaDisplay(event: MotionEvent) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            noteUserInteractionAsync()
+        }
+        mSplitController?.onTouchAaDisplay(event)
+    }
+
+    override fun reportAaUiDisplayId(displayId: Int) {
+        mSplitController?.setAaUiDisplayId(displayId)
+        mSessionPolicy?.onAaUiDisplayIdChanged(displayId)
+    }
+
+    override fun hideIme() {
+        runIO {
+            noteUserInteraction()
+            mSplitController?.hideIme()
+        }
+    }
+
+    override fun getImePane(): Int {
+        return mSplitController?.getImePane() ?: SplitPane.FULLSCREEN_NONE
+    }
+
+    override fun reportCoolwalkRailSnapshot(
+        phase: Int,
+        touchRailWidthPx: Int,
+        fullHuWidthPx: Int,
+        facetDisplayId: Int,
+    ) {
+        if (phase == RailPhase.ReconnectSettling.code) {
+            coolwalkReconnectEpochMs = android.os.SystemClock.uptimeMillis()
+        }
+        val snapshot = io.github.nitsuya.aa.display.xposed.hook.aa.coolwalk.RailSnapshot(
+            phase = RailPhase.fromCode(phase),
+            effectiveRailWidthPx = 0,
+            touchRailWidthPx = touchRailWidthPx,
+            fullHuWidthPx = fullHuWidthPx,
+            facetDisplayId = facetDisplayId,
+            updatedUptimeMs = android.os.SystemClock.uptimeMillis(),
+            lastEvent = "client-report",
+        )
+        val prevFull = CoolwalkRailStore.serverSnapshot.fullHuWidthPx
+        val cr = if (hasSystemContext) systemContext.contentResolver else null
+        CoolwalkRailStore.rememberFromReport(snapshot, cr)
+        // Publish live client report only; session merge on read respects reconnect defer gate.
+        val published = snapshot
+        CoolwalkRailStore.publishServer(published)
+        if (hasSystemContext) {
+            CoolwalkRailStore.write(systemContext.contentResolver, published)
+        }
+        logDebug(
+            TAG,
+            "CoolwalkRail snapshot phase=${snapshot.phase} touch=$touchRailWidthPx full=$fullHuWidthPx facet=$facetDisplayId",
+        )
+        if (fullHuWidthPx > prevFull || snapshot.phase == RailPhase.FullBleed) {
+            scheduleRailSettleRetry()
+        }
+    }
+
+    override fun getCoolwalkRailSnapshot(): IntArray {
+        val s = CoolwalkRailStore.effectiveSnapshot(if (hasSystemContext) systemContext.contentResolver else null)
+        return intArrayOf(s.phase.code, s.touchRailWidthPx, s.fullHuWidthPx, s.facetDisplayId)
+    }
+
+    override fun getCoolwalkReconnectEpochMs(): Long = coolwalkReconnectEpochMs
+
+    override fun notifyCoolwalkFullBleed() {
+        sendCoolwalkFullBleed(includeGearhead = false)
+    }
+
+    private fun notifyStuckContentSlotFullBleed() {
+        sendCoolwalkFullBleed(includeGearhead = true)
+    }
+
+    private fun sendCoolwalkFullBleed(includeGearhead: Boolean) {
+        mSessionPolicy?.sendCoolwalkFullBleedBroadcast(includeGearhead)
+            ?: sendAaDisplayBroadcastFromSystem(
+                AABroadcastConst.ACTION_COOLWALK_FULL_BLEED,
+                includeGearhead,
+            )
+    }
+
+    private fun sendAaDisplayBroadcastFromSystem(action: String, includeGearhead: Boolean = false) {
+        if (!hasSystemContext) return
+        try {
+            val intent = android.content.Intent(action)
+            if (includeGearhead) {
+                intent.putExtra(AABroadcastConst.EXTRA_COOLWALK_RELAUNCH_PRESENTATION, true)
+                AaSystemBroadcast.toAaDisplayAndGearhead(systemContext, intent)
+            } else {
+                AaSystemBroadcast.toAaDisplay(systemContext, intent)
+            }
+        } catch (e: Throwable) {
+            log(TAG, "sendAaDisplayBroadcastFromSystem failed action=$action", e)
+        }
+    }
+
+    override fun getRecentTask(): RecentTask {
+        // Client already loads on IO ([AaRecentTaskFragment]); avoid runBlocking on the
+        // Binder thread which only adds a dispatcher hop while still blocking the caller.
+        return mSplitController?.getRecentTask()
+            ?: RecentTask(emptyList(), emptyList(), emptyList())
+    }
+
+    override fun reportCarPlaySessionLive(live: Boolean) {
+        carPlaySessionLive = live
+        mSessionPolicy?.onSecondaryEgressLiveChanged(live)
+        runCatching { CarPlayProcessBoost.setBoost(live) }
+            .onFailure { logDebug(TAG, "CarPlayProcessBoost.setBoost failed") }
+        // Capture + phone mute follow the CarPlay FGS session, not individual RTSP
+        // audio SETUP/TEARDOWN. DiPlay soft-reconnect briefly drops UDP egresses; if we
+        // disarmed there, phone speaker came back before the next SETUP remuted.
+        runCatching { CarPlayAudioCapture.setEnabled(live) }
+            .onFailure {
+                logDebug(
+                    TAG,
+                    "CarPlayAudioCapture setEnabled($live) on session live failed",
+                )
+            }
+        logDebug(TAG, "reportCarPlaySessionLive live=$live")
+    }
+
+    override fun isCarPlaySessionLive(): Boolean = carPlaySessionLive
+
+    override fun setCarPlayAudioEgressEnabled(enabled: Boolean) {
+        if (!enabled && carPlaySessionLive) {
+            // Soft reconnect / TEARDOWN: keep tap + local mute until FGS tearDown.
+            logDebug(TAG, "setCarPlayAudioEgressEnabled(false) ignored — session still live")
+            return
+        }
+        CarPlayAudioCapture.setEnabled(enabled)
+    }
+
+    override fun pullCarPlayAudio(maxBytes: Int): ByteArray = CarPlayAudioCapture.pull(maxBytes)
+
+    override fun pullCarPlaySpeechAudio(maxBytes: Int): ByteArray =
+        CarPlayAudioCapture.pullSpeech(maxBytes)
+
+    override fun isCarPlaySpeechCaptureReady(): Boolean =
+        CarPlayAudioCapture.isSpeechCaptureReady()
+
+    @Suppress("DEPRECATION")
+    override fun setWifiEnabled(enabled: Boolean) {
+        if (!hasSystemContext) {
+            log(TAG, "setWifiEnabled($enabled) skipped: systemContext not initialized")
+            return
+        }
+        val wm = systemContext.getSystemService(android.net.wifi.WifiManager::class.java)
+        if (wm == null) {
+            log(TAG, "setWifiEnabled($enabled) skipped: no WifiManager")
+            return
+        }
+        val token = android.os.Binder.clearCallingIdentity()
+        try {
+            val ok = runCatching { wm.setWifiEnabled(enabled) }.getOrDefault(false)
+            log(TAG, "setWifiEnabled($enabled) ok=$ok now=${runCatching { wm.isWifiEnabled }.getOrNull()}")
+        } finally {
+            android.os.Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    @Suppress("DEPRECATION", "HardwareIds", "MissingPermission")
+    override fun localWifiMac(): String {
+        if (!hasSystemContext) return ""
+        // Binder calling uid is the app. WifiManager rejects that against the
+        // system package ("Package android does not belong to <appUid>").
+        val token = android.os.Binder.clearCallingIdentity()
+        try {
+            return localWifiMacCleared()
+        } finally {
+            android.os.Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    @Suppress("DEPRECATION", "HardwareIds", "MissingPermission")
+    private fun localWifiMacCleared(): String {
+        val cm = systemContext.getSystemService(android.net.ConnectivityManager::class.java)
+        val networks = runCatching { cm?.allNetworks }.getOrNull().orEmpty()
+        for (network in networks) {
+            val caps = runCatching { cm?.getNetworkCapabilities(network) }.getOrNull() ?: continue
+            if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) continue
+            val info = caps.transportInfo as? android.net.wifi.WifiInfo ?: continue
+            val mac = usableMac(info.macAddress) ?: continue
+            log(TAG, "localWifiMac $mac")
+            return mac
+        }
+        val wm = systemContext.getSystemService(android.net.wifi.WifiManager::class.java)
+        val fromInfo = usableMac(wm?.connectionInfo?.macAddress)
+        if (fromInfo != null) {
+            log(TAG, "localWifiMac $fromInfo")
+            return fromInfo
+        }
+        return ""
+    }
+
+    @Suppress("HardwareIds", "MissingPermission")
+    override fun localBluetoothMac(): String {
+        if (!hasSystemContext) return ""
+        val token = android.os.Binder.clearCallingIdentity()
+        try {
+            val adapter = systemContext
+                .getSystemService(android.bluetooth.BluetoothManager::class.java)
+                ?.adapter
+            usableMac(adapter?.address)?.let {
+                log(TAG, "localBluetoothMac $it")
+                return it
+            }
+            val fromSettings = android.provider.Settings.Secure.getString(
+                systemContext.contentResolver,
+                "bluetooth_address",
+            )
+            usableMac(fromSettings)?.let {
+                log(TAG, "localBluetoothMac $it")
+                return it
+            }
+            return ""
+        } finally {
+            android.os.Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    /**
+     * Samsung keeps an unvalidated car hotspot as Active default when the user
+     * once chose "stay connected" (ACCEPT_UNVALIDATED). That installs a wlan0
+     * policy route with no default gateway → whole-phone "no network" while LTE
+     * is still up. Prefer cellular via network_avoid_bad_wifi + noInternetExpected
+     * + allowAutojoin(false). Do **not** call setAcceptUnvalidated(false) or
+     * setAvoidUnvalidated: both drop the WIFI NetworkAgent while wlan0 may stay
+     * associated, leaving AirPlay with nothing to bindSocket.
+     */
+    @SuppressLint("MissingPermission")
+    override fun preferCellularOverUnvalidatedWifi() {
+        if (!hasSystemContext) return
+        val token = android.os.Binder.clearCallingIdentity()
+        try {
+            preferCellularOverUnvalidatedWifiUnlocked()
+        } finally {
+            android.os.Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun preferCellularOverUnvalidatedWifiUnlocked() {
+        try {
+            android.provider.Settings.Global.putInt(
+                systemContext.contentResolver,
+                "network_avoid_bad_wifi",
+                1,
+            )
+        } catch (e: Throwable) {
+            log(TAG, "network_avoid_bad_wifi put failed", e)
+        }
+        val wm = systemContext.getSystemService(android.net.wifi.WifiManager::class.java)
+        try {
+            @Suppress("UNCHECKED_CAST")
+            val configs = wm?.configuredNetworks as? List<android.net.wifi.WifiConfiguration>
+            configs?.forEach { cfg ->
+                val bare = cfg.SSID?.trim('"').orEmpty()
+                if (!isCarHotspotSsid(bare)) return@forEach
+                try {
+                    val f = cfg.javaClass.getField("noInternetAccessExpected")
+                    f.setBoolean(cfg, true)
+                    wm.updateNetwork(cfg)
+                    log(TAG, "noInternetAccessExpected=true ssid=$bare")
+                } catch (e: Throwable) {
+                    log(TAG, "noInternetAccessExpected failed ssid=$bare", e)
+                }
+                // Stop WifiNetworkFactory from auto-joining the saved STA (that path
+                // stamps ACCEPT_UNVALIDATED and steals the default route). Specifier
+                // joins from CarPlayWifiHandoff still work with autojoin off.
+                try {
+                    android.net.wifi.WifiManager::class.java
+                        .getMethod("allowAutojoin", Int::class.javaPrimitiveType, Boolean::class.javaPrimitiveType)
+                        .invoke(wm, cfg.networkId, false)
+                    log(TAG, "allowAutojoin(false) ssid=$bare id=${cfg.networkId}")
+                } catch (e: Throwable) {
+                    log(TAG, "allowAutojoin failed ssid=$bare", e)
+                }
+            }
+            runCatching { wm?.saveConfiguration() }
+        } catch (e: Throwable) {
+            log(TAG, "wifi config mark failed", e)
+        }
+    }
+
+    private fun isCarHotspotSsid(ssid: String): Boolean {
+        if (ssid.isEmpty()) return false
+        val s = ssid.lowercase()
+        return s.contains("audi") ||
+            s.contains("mmi") ||
+            s.contains("carplay") ||
+            s.contains("diplay") ||
+            s.startsWith("carplay")
+    }
+
+    @SuppressLint("MissingPermission")
+    override fun prepareCarPlayHeadUnit(address: String?) {
+        val mac = address?.trim()?.uppercase().orEmpty()
+        if (mac.length < 11 || !hasSystemContext) return
+        headUnitAddresses.add(mac)
+        armHeadUnitAccessWatch()
+        val token = android.os.Binder.clearCallingIdentity()
+        try {
+            val adapter = systemContext.getSystemService(BluetoothManager::class.java)?.adapter
+            if (adapter == null || !adapter.isEnabled) return
+            val device = adapter.getRemoteDevice(mac)
+            // Confirm any in-flight SSP here (app has no BLUETOOTH_PRIVILEGED).
+            // Harmless when no pairing is pending; required so PAIRING_REQUEST never
+            // falls through to Settings after prepareHeadUnit from the app watch.
+            val pairOk = try {
+                device.setPairingConfirmation(true)
+            } catch (e: Throwable) {
+                log(TAG, "prepareCarPlayHeadUnit pairingConfirm failed ${e.message}")
+                false
+            }
+            val book = setAccess(device, "setPhonebookAccessPermission")
+            val msg = setAccess(device, "setMessageAccessPermission")
+            val sim = setAccess(device, "setSimAccessPermission")
+            log(
+                TAG,
+                "prepareCarPlayHeadUnit $mac pair=$pairOk pbap=$book map=$msg sim=$sim",
+            )
+            forbidProfile(adapter, device, BluetoothProfile.A2DP, "a2dp")
+            forbidProfile(adapter, device, PROFILE_PBAP, "pbap")
+            forbidProfile(adapter, device, PROFILE_MAP, "map")
+        } catch (e: Throwable) {
+            log(TAG, "prepareCarPlayHeadUnit failed ${e.message}")
+        } finally {
+            android.os.Binder.restoreCallingIdentity(token)
+        }
+    }
+
+    /**
+     * PBAP/MAP dialogs and the HU pairing prompt are ordered broadcasts.
+     * The app process cannot call `setPairingConfirmation` (no BLUETOOTH_PRIVILEGED);
+     * system_server can, and aborting here keeps Settings from cancelling the bond.
+     */
+    @SuppressLint("UnspecifiedRegisterReceiverFlag", "MissingPermission")
+    private fun armHeadUnitAccessWatch() {
+        if (headUnitAccessReceiver != null || !hasSystemContext) return
+        val rx = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent?) {
+                val action = intent?.action ?: return
+                val device = if (Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                } ?: return
+                val mac = device.address?.trim()?.uppercase().orEmpty()
+                if (mac !in headUnitAddresses) return
+                when (action) {
+                    ACTION_CONNECTION_ACCESS_REQUEST -> {
+                        val type = intent.getIntExtra(EXTRA_ACCESS_REQUEST_TYPE, -1)
+                        if (type != REQUEST_PHONEBOOK && type != REQUEST_MESSAGE && type != REQUEST_SIM) return
+                        val token = android.os.Binder.clearCallingIdentity()
+                        try {
+                            setAccess(device, "setPhonebookAccessPermission")
+                            setAccess(device, "setMessageAccessPermission")
+                            setAccess(device, "setSimAccessPermission")
+                        } finally {
+                            android.os.Binder.restoreCallingIdentity(token)
+                        }
+                        try {
+                            abortBroadcast()
+                        } catch (_: Throwable) {
+                        }
+                        log(TAG, "reject HU access type=$type $mac")
+                    }
+                    BluetoothDevice.ACTION_PAIRING_REQUEST -> {
+                        val token = android.os.Binder.clearCallingIdentity()
+                        val ok = try {
+                            device.setPairingConfirmation(true)
+                        } catch (e: Throwable) {
+                            log(TAG, "HU pairing confirm failed ${e.message}")
+                            false
+                        } finally {
+                            android.os.Binder.restoreCallingIdentity(token)
+                        }
+                        if (!ok) return
+                        try {
+                            abortBroadcast()
+                        } catch (_: Throwable) {
+                        }
+                        log(TAG, "HU pairing confirmed $mac")
+                    }
+                }
+            }
+        }
+        headUnitAccessReceiver = rx
+        val filter = IntentFilter().apply {
+            addAction(ACTION_CONNECTION_ACCESS_REQUEST)
+            addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+            priority = IntentFilter.SYSTEM_HIGH_PRIORITY
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                systemContext.registerReceiver(rx, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                systemContext.registerReceiver(rx, filter)
+            }
+        } catch (e: Throwable) {
+            headUnitAccessReceiver = null
+            log(TAG, "HU access watch failed ${e.message}")
+        }
+    }
+
+    private fun setAccess(device: BluetoothDevice, method: String): Boolean {
+        return try {
+            val m = device.javaClass.getMethod(method, Int::class.javaPrimitiveType)
+            m.invoke(device, ACCESS_REJECTED) as? Boolean ?: false
+        } catch (e: Throwable) {
+            log(TAG, "$method failed ${e.message}")
+            false
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun forbidProfile(
+        adapter: android.bluetooth.BluetoothAdapter,
+        device: BluetoothDevice,
+        profile: Int,
+        label: String,
+    ) {
+        val listener = object : BluetoothProfile.ServiceListener {
+            override fun onServiceConnected(profileId: Int, proxy: BluetoothProfile) {
+                val token = android.os.Binder.clearCallingIdentity()
+                val ok = try {
+                    val method = proxy.javaClass.getMethod(
+                        "setConnectionPolicy",
+                        BluetoothDevice::class.java,
+                        Int::class.javaPrimitiveType,
+                    )
+                    method.invoke(proxy, device, CONNECTION_POLICY_FORBIDDEN) as? Boolean ?: false
+                } catch (e: Throwable) {
+                    log(TAG, "forbid $label failed ${e.message}")
+                    false
+                } finally {
+                    android.os.Binder.restoreCallingIdentity(token)
+                }
+                log(TAG, "forbid $label ${device.address} ok=$ok")
+                try {
+                    adapter.closeProfileProxy(profileId, proxy)
+                } catch (_: Throwable) {
+                }
+            }
+
+            override fun onServiceDisconnected(profileId: Int) {}
+        }
+        try {
+            adapter.getProfileProxy(systemContext, listener, profile)
+        } catch (e: Throwable) {
+            log(TAG, "forbid $label proxy failed ${e.message}")
+        }
+    }
+
+    private fun usableMac(raw: String?): String? {
+        val mac = raw?.trim()?.uppercase().orEmpty()
+        if (mac.length < 11 || mac == "02:00:00:00:00:00" || mac == "00:00:00:00:00:00") return null
+        return mac
+    }
+
+    override fun scrollPane(pane: Int, x: Int, y: Int, vScroll: Int, hScroll: Int) {
+        runIO {
+            mSessionPolicy?.onVirtualDisplayUserInteraction()
+            runCatching {
+                mSplitController?.onHidScrollOnPane(pane, x.toFloat(), y.toFloat(), vScroll.toFloat(), hScroll.toFloat())
+            }.onFailure { logDebug(TAG, "scrollPane: ${it.message}") }
+        }
+    }
+
+    private fun noteUserInteraction() {
+        mSessionPolicy?.onVirtualDisplayUserInteraction()
+    }
+
+    private fun noteUserInteractionAsync() {
+        runIO { noteUserInteraction() }
+    }
+}
+
+
