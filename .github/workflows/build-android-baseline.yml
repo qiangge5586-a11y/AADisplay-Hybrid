@@ -58,6 +58,13 @@ jobs:
           cp hybrid/android-overlay/aa-display/src/main/aidl/io/github/nitsuya/aa/display/xposed/ICoreManager.aidl \
             upstream/aa-display/src/main/aidl/io/github/nitsuya/aa/display/xposed/
 
+          mkdir -p upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/main
+          mkdir -p upstream/aa-display/src/main/res/layout
+          cp hybrid/android-overlay/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/main/MainActivity.kt \
+            upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/main/
+          cp hybrid/android-overlay/aa-display/src/main/res/layout/activity_main.xml \
+            upstream/aa-display/src/main/res/layout/
+
       - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
         run: |
