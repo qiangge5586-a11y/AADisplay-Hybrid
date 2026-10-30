@@ -35,9 +35,6 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses || true
-
       - name: Build upstream debug APK (baseline only)
         working-directory: upstream
         run: |
