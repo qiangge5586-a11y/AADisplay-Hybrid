@@ -98,24 +98,32 @@ object DisplayResolutionStore {
         }
     }
 
-    private fun loadFile(): Size? = try {
-        val file = File(PATH)
-        if (!file.isFile || file.length() <= 0L) return Size(0, 0)
-        val props = Properties()
-        FileInputStream(file).use { props.load(it) }
-        Size(props.getProperty(FILE_WIDTH)?.toIntOrNull() ?: 0,
-            props.getProperty(FILE_HEIGHT)?.toIntOrNull() ?: 0)
-    } catch (t: Throwable) {
-        Log.w(TAG, "load file failed", t); null
+    private fun loadFile(): Size? {
+        return try {
+            val file = File(PATH)
+            if (!file.isFile || file.length() <= 0L) return Size(0, 0)
+            val props = Properties()
+            FileInputStream(file).use { props.load(it) }
+            Size(
+                props.getProperty(FILE_WIDTH)?.toIntOrNull() ?: 0,
+                props.getProperty(FILE_HEIGHT)?.toIntOrNull() ?: 0,
+            )
+        } catch (t: Throwable) {
+            Log.w(TAG, "load file failed", t)
+            null
+        }
     }
 
-    private fun writeSettings(size: Size, cr: ContentResolver?): Boolean = try {
+    private fun writeSettings(size: Size, cr: ContentResolver?): Boolean {
         if (cr == null) return false
-        val first = Settings.Global.putString(cr, SETTINGS_WIDTH, size.width.toString())
-        val second = Settings.Global.putString(cr, SETTINGS_HEIGHT, size.height.toString())
-        first && second
-    } catch (t: Throwable) {
-        Log.w(TAG, "save settings failed", t); false
+        return try {
+            val first = Settings.Global.putString(cr, SETTINGS_WIDTH, size.width.toString())
+            val second = Settings.Global.putString(cr, SETTINGS_HEIGHT, size.height.toString())
+            first && second
+        } catch (t: Throwable) {
+            Log.w(TAG, "save settings failed", t)
+            false
+        }
     }
 
     private fun writeFile(size: Size): Boolean = try {
