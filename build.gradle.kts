@@ -7,35 +7,28 @@ sourceSets {
     test { kotlin.srcDir("core/src/test/kotlin") }
 }
 
-tasks.register<JavaExec>("testProjectionResolution") {
-    group = "verification"; dependsOn("testClasses")
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("io.github.nitsuya.aa.display.model.ProjectionResolutionTestKt")
-}
-tasks.register<JavaExec>("testShizukuPolicy") {
-    group = "verification"; dependsOn("testClasses")
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("io.github.nitsuya.aa.display.shizuku.ShizukuAccessPolicyTestKt")
-}
-tasks.register<JavaExec>("testResolutionCoordinator", "testProjectionPerformance", "testProjectionContentTransform") {
-    group = "verification"; dependsOn("testClasses")
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("io.github.nitsuya.aa.display.resolution.ResolutionOverrideCoordinatorTestKt")
+fun registerCoreTest(taskName: String, testMainClass: String) {
+    tasks.register<JavaExec>(taskName) {
+        group = "verification"
+        dependsOn("testClasses")
+        classpath = sourceSets.test.get().runtimeClasspath
+        mainClass.set(testMainClass)
+    }
 }
 
-tasks.register<JavaExec>("testProjectionPerformance") {
-    group = "verification"; dependsOn("testClasses")
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("io.github.nitsuya.aa.display.performance.ProjectionPerformanceProfileTestKt")
-}
+registerCoreTest("testProjectionResolution", "io.github.nitsuya.aa.display.model.ProjectionResolutionTestKt")
+registerCoreTest("testShizukuPolicy", "io.github.nitsuya.aa.display.shizuku.ShizukuAccessPolicyTestKt")
+registerCoreTest("testResolutionCoordinator", "io.github.nitsuya.aa.display.resolution.ResolutionOverrideCoordinatorTestKt")
+registerCoreTest("testProjectionPerformance", "io.github.nitsuya.aa.display.performance.ProjectionPerformanceProfileTestKt")
+registerCoreTest("testProjectionContentTransform", "io.github.nitsuya.aa.display.performance.ProjectionContentTransformTestKt")
 
 tasks.register("verifyHybridCore") {
     group = "verification"
-    dependsOn("testProjectionResolution", "testShizukuPolicy", "testResolutionCoordinator")
-}
-
-tasks.register<JavaExec>("testProjectionContentTransform") {
-    group = "verification"; dependsOn("testClasses")
-    classpath = sourceSets.test.get().runtimeClasspath
-    mainClass.set("io.github.nitsuya.aa.display.performance.ProjectionContentTransformTestKt")
+    dependsOn(
+        "testProjectionResolution",
+        "testShizukuPolicy",
+        "testResolutionCoordinator",
+        "testProjectionPerformance",
+        "testProjectionContentTransform"
+    )
 }
