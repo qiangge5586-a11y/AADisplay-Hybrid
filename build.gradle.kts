@@ -17,11 +17,18 @@ tasks.register<JavaExec>("testShizukuPolicy") {
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("io.github.nitsuya.aa.display.shizuku.ShizukuAccessPolicyTestKt")
 }
-tasks.register<JavaExec>("testResolutionCoordinator") {
+tasks.register<JavaExec>("testResolutionCoordinator", "testProjectionPerformance") {
     group = "verification"; dependsOn("testClasses")
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("io.github.nitsuya.aa.display.resolution.ResolutionOverrideCoordinatorTestKt")
 }
+
+tasks.register<JavaExec>("testProjectionPerformance") {
+    group = "verification"; dependsOn("testClasses")
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.nitsuya.aa.display.performance.ProjectionPerformanceProfileTestKt")
+}
+
 tasks.register("verifyHybridCore") {
     group = "verification"
     dependsOn("testProjectionResolution", "testShizukuPolicy", "testResolutionCoordinator")
