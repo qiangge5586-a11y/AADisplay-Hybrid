@@ -911,6 +911,9 @@ class CoreManagerService private constructor() : ICoreManager.Stub() {
                 densityDpi = effectiveDpi,
                 newSession = mSplitController == null
             )
+            val configuredResolution = DisplayResolutionStore.load(contentResolverOrNull())
+            val renderWidth = if (configuredResolution.isAutomatic) profile.width else configuredResolution.width
+            val renderHeight = if (configuredResolution.isAutomatic) profile.height else configuredResolution.height
             mSplitController?.apply {
                 // Soft reconnect: always cancel Delay Destroy and rebind surfaces/policies.
                 mSessionPolicy?.onResume()
@@ -918,10 +921,11 @@ class CoreManagerService private constructor() : ICoreManager.Stub() {
                 setPaneSurface(SplitPane.PRIMARY, primarySurface)
                 setPaneSurface(SplitPane.SECONDARY, secondarySurface)
                 // Always kick resize/policies/ensure after surface rebind (null→live).
-                onReconnected(profile.width, profile.height, profile.densityDpi)
+                onReconnected(renderWidth, renderHeight, profile.densityDpi)
                 // Density-only HU changes can leave controller/profile briefly desynced when
                 // the client still echoes a stale dpi; re-assert effective density.
                 applyDensityOverrideLive()
+                applyResolutionOverrideLive()
                 // Exit ColorFade if panes went OFF while AA was disconnected.
                 mSessionPolicy?.keepVirtualDisplayAwake("soft-reconnect")
                 // Controller retains live ratio across Delay Destroy; AA echo may lag
@@ -939,8 +943,8 @@ class CoreManagerService private constructor() : ICoreManager.Stub() {
                     val controller = this
                     mSplitController = controller
                     onConnected(
-                        profile.width,
-                        profile.height,
+                        renderWidth,
+                        renderHeight,
                         profile.densityDpi,
                         SplitPane.clampRatio(ratio),
                         primarySurface,
