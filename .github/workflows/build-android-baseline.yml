@@ -1,4 +1,4 @@
-name: Build upstream Android baseline
+name: Build AADisplay integration compile check
 
 on:
   workflow_dispatch:
