@@ -41,7 +41,13 @@ jobs:
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" "platform-tools" "platforms;android-36"
 
-      - name: Build upstream debug APK (baseline only)
+      - name: Overlay hybrid resolution store (not wired to UI or Binder yet)
+        run: |
+          mkdir -p upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/util
+          cp hybrid/android-overlay/aa-display/src/main/java/io/github/nitsuya/aa/display/util/DisplayResolutionStore.kt \
+            upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/util/
+
+      - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
         run: |
           chmod +x ./gradlew
