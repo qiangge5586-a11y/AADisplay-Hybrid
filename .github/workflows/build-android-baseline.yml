@@ -1,0 +1,53 @@
+name: Build upstream Android baseline
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-android-baseline.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build pinned AADisplay Android app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout hybrid integration repository
+        uses: actions/checkout@v4
+        with:
+          path: hybrid
+
+      - name: Checkout pinned upstream AADisplay source
+        uses: actions/checkout@v4
+        with:
+          repository: Nitsuya/AADisplay
+          ref: 494dcc4909e8765e8798be4e7b8031fefd90a4eb
+          path: upstream
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Build upstream debug APK (baseline only)
+        working-directory: upstream
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :aa-display:assembleDebug
+
+      - name: Upload baseline APK for build-chain verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: aadisplay-upstream-baseline-NOT-OPTIMIZED
+          path: upstream/aa-display/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
