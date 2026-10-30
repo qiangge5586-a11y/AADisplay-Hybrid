@@ -32,13 +32,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Android SDK command-line tools
-        uses: android-actions/setup-android@v3
-
-      - name: Install required Android SDK packages
+      - name: Use runner-provisioned Android SDK
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | sort | tail -n 1)"
+          test -x "$SDKMANAGER"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          yes | "$SDKMANAGER" --licenses
+          "$SDKMANAGER" "platform-tools" "platforms;android-36"
 
       - name: Build upstream debug APK (baseline only)
         working-directory: upstream
