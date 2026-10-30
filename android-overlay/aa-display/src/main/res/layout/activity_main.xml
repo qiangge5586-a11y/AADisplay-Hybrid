@@ -1,0 +1,469 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:overScrollMode="ifContentScrolls"
+    android:scrollbars="vertical">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="@dimen/content_padding"
+        android:paddingVertical="@dimen/content_padding">
+
+        <FrameLayout
+            android:id="@+id/mcv_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_status_card"
+            android:elevation="6dp">
+
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:padding="@dimen/content_padding">
+
+                <ImageView
+                    android:id="@+id/iv_icon"
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:layout_centerVertical="true"
+                    android:src="@drawable/ic_round_check_circle_24"
+                    android:tint="@color/color_on_primary"
+                    tools:ignore="ContentDescription" />
+
+                <TextView
+                    android:id="@+id/tv_active"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="24dp"
+                    android:layout_toEndOf="@id/iv_icon"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/color_on_primary"
+                    android:textSize="16sp"
+                    tools:text="Activated" />
+
+                <TextView
+                    android:id="@+id/tv_version"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_below="@id/tv_active"
+                    android:layout_marginStart="24dp"
+                    android:layout_marginTop="2dp"
+                    android:layout_toEndOf="@id/iv_icon"
+                    android:textColor="@color/color_on_primary"
+                    android:textSize="14sp"
+                    tools:text="0.24#17.4-r1" />
+
+            </RelativeLayout>
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/mcv_info"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_info_card"
+            android:elevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/content_padding">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="系统版本"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/system_version"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/mcv_channel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_info_card"
+            android:elevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/content_padding">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="投到哪里"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="同一时间只能选一个；换通道后原先那边会停掉"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="12sp" />
+
+                <RadioGroup
+                    android:id="@+id/rg_carplay_channel"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="vertical">
+
+                    <RadioButton
+                        android:id="@+id/rb_channel_aa"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="Android Auto（原路投屏）" />
+
+                    <RadioButton
+                        android:id="@+id/rb_channel_cp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:minHeight="48dp"
+                        android:text="CarPlay 无线（蓝牙连车机）" />
+                </RadioGroup>
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- CarPlay–only settings (plain-language status + how to connect). -->
+        <FrameLayout
+            android:id="@+id/panel_carplay"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_info_card"
+            android:elevation="2dp"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/content_padding">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="CarPlay 无线"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tv_carplay_state"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:fontFamily="sans-serif-medium"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_primary"
+                    android:textSize="18sp"
+                    tools:text="等待车机连接" />
+
+                <TextView
+                    android:id="@+id/tv_carplay_detail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    tools:text="手机已准备好，请到车机上点连接 CarPlay" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="怎么连"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="4dp"
+                    android:text="1. 手机蓝牙先与车机配对（已配对可跳过）\n2. 上方选「CarPlay 无线」，允许蓝牙权限\n3. 点「使蓝牙可发现」并允许 300 秒\n4. 在车机上打开 / 连接 CarPlay\n5. 若提示连车机热点，选加入"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/btn_carplay_host"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:minHeight="48dp"
+                    android:text="重新连接" />
+
+                <Button
+                    android:id="@+id/btn_bt_discoverable"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:minHeight="48dp"
+                    android:text="使蓝牙可发现（300 秒）" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="使用提示"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:lineSpacingExtra="4dp"
+                    android:text="· 导航、音乐等声音从车机出；电话仍走手机听筒\n· 车机画面是双窗分屏，触控与分隔条用法和 AA 相同\n· 若用 DiPlay：设置 → 显示 → 帧率选 60（默认常为 30）"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <!-- Virtual-display DPI (AA: HU negotiate; CarPlay: default 160, manual override). -->
+        <FrameLayout
+            android:id="@+id/panel_aa"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_info_card"
+            android:elevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/content_padding">
+
+                <TextView
+                    android:id="@+id/tv_vd_density_title"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="虚拟屏 DPI"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tv_vd_density_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="留空 = 自动（车机上报值）；有效范围 120–640"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/et_vd_density_dpi"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="留空 = 自动"
+                    android:imeOptions="actionDone"
+                    android:importantForAutofill="no"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:maxLines="1"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_apply_vd_density_dpi"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:minHeight="40dp"
+                        android:text="应用" />
+
+                    <Button
+                        android:id="@+id/btn_reset_vd_density_dpi"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:minHeight="40dp"
+                        android:text="恢复默认" />
+
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_vd_density_saved"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    tools:text="已保存：自动" />
+
+                <TextView
+                    android:id="@+id/tv_vd_density_hu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    tools:text="车机协商：320 dpi" />
+
+                <TextView
+                    android:id="@+id/tv_vd_density_session"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textAlignment="viewStart"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    tools:text="当前会话：320 dpi" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+        <!-- Custom AA render-buffer resolution; 0x0 follows the negotiated HU profile. -->
+        <FrameLayout
+            android:id="@+id/panel_vd_resolution"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_info_card"
+            android:elevation="2dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="@dimen/content_padding">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Android Auto 虚拟屏分辨率"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="留空或恢复自动 = 跟随车机协商；宽 320–7680、高 240–4320，最多 2000 万像素"
+                    android:textColor="@color/color_text_secondary"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/et_vd_resolution_width"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="宽度 px"
+                        android:inputType="number"
+                        android:maxLength="4"
+                        android:maxLines="1"
+                        android:textColor="@color/color_text_primary"
+                        android:textSize="14sp" />
+
+                    <EditText
+                        android:id="@+id/et_vd_resolution_height"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:hint="高度 px"
+                        android:inputType="number"
+                        android:maxLength="4"
+                        android:maxLines="1"
+                        android:textColor="@color/color_text_primary"
+                        android:textSize="14sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_apply_vd_resolution"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:layout_weight="1"
+                        android:minHeight="40dp"
+                        android:text="应用分辨率" />
+
+                    <Button
+                        android:id="@+id/btn_reset_vd_resolution"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:minHeight="40dp"
+                        android:text="恢复自动" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/tv_vd_resolution_saved"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    tools:text="已保存：自动" />
+
+                <TextView
+                    android:id="@+id/tv_vd_resolution_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textColor="@color/color_text_primary"
+                    android:textSize="14sp"
+                    tools:text="当前生效：等待 Android Auto 连接" />
+            </LinearLayout>
+        </FrameLayout>
+
+    </LinearLayout>
+</ScrollView>
