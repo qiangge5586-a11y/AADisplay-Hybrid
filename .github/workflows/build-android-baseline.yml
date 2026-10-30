@@ -41,11 +41,14 @@ jobs:
           yes | "$SDKMANAGER" --licenses
           "$SDKMANAGER" "platform-tools" "platforms;android-36"
 
-      - name: Overlay hybrid resolution store (not wired to UI or Binder yet)
+      - name: Overlay resolution store and rollback-safe split resize lifecycle
         run: |
           mkdir -p upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/util
+          mkdir -p upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/aa/split
           cp hybrid/android-overlay/aa-display/src/main/java/io/github/nitsuya/aa/display/util/DisplayResolutionStore.kt \
             upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/util/
+          cp hybrid/android-overlay/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/aa/split/SplitVdLifecycle.kt \
+            upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/aa/split/
 
       - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
