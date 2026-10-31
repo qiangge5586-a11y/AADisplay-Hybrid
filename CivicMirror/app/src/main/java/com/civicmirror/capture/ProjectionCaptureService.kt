@@ -6,11 +6,9 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
-import android.media.projection.MediaProjection
+import android.media.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
@@ -20,23 +18,22 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import com.civicmirror.MainActivity
-import com.civicmirror.R
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * First capture milestone: acquire real screen frames without encoding or modifying
- * the phone's physical display. The ImageReader surface is deliberately the only
- * producer target for this VirtualDisplay.
+ * MediaProjection -> hardware AVC encoder. The encoder input Surface is the
+ * VirtualDisplay target, avoiding a CPU-side RGBA frame copy.
  */
 class ProjectionCaptureService : Service() {
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    private var encoder: H264SurfaceEncoder? = null
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
     private var stopped = false
-    private var frameCount = 0L
+    private var encodedFrameCount = 0L
+    private var encodedByteCount = 0L
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
             Log.i(TAG, "MediaProjection stopped by system or user")
@@ -100,9 +97,8 @@ class ProjectionCaptureService : Service() {
             outputWidth = size.first
             outputHeight = size.second
 
-            val reader = createReader(outputWidth, outputHeight)
-            imageReader = reader
-
+            val activeEncoder = createEncoder(outputWidth, outputHeight)
+            encoder = activeEncoder
             mediaProjection.registerCallback(projectionCallback, captureHandler)
 
             // One consent token -> exactly one createVirtualDisplay call.
@@ -112,36 +108,36 @@ class ProjectionCaptureService : Service() {
                 outputHeight,
                 densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                reader.surface,
+                activeEncoder.inputSurface,
                 null,
                 captureHandler
             )
-            updateNotification("屏幕捕获运行中 · 等待首帧")
-            Log.i(TAG, "Capture started at ${outputWidth}x${outputHeight}")
+            updateNotification("AVC 硬件编码运行中 · 等待首帧")
+            Log.i(TAG, "Capture/AVC started at ${outputWidth}x${outputHeight}")
         } catch (error: Exception) {
-            Log.e(TAG, "Unable to start screen capture", error)
+            Log.e(TAG, "Unable to start screen capture/AVC encoder", error)
             stopCapture()
             stopSelf()
         }
     }
 
-    private fun createReader(width: Int, height: Int): ImageReader {
-        return ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3).apply {
-            setOnImageAvailableListener({ source ->
-                try {
-                    val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-                    image.use {
-                        frameCount++
-                        if (frameCount == 1L || frameCount % 120L == 0L) {
-                            Log.i(TAG, "Captured frames=$frameCount size=${it.width}x${it.height}")
-                            updateNotification("屏幕捕获运行中 · 已接收 $frameCount 帧")
-                        }
-                    }
-                } catch (error: Exception) {
-                    Log.e(TAG, "Frame acquisition failed", error)
+    private fun createEncoder(width: Int, height: Int): H264SurfaceEncoder {
+        val result = H264SurfaceEncoder(width, height) { packet, flags, pts ->
+            if (packet.isNotEmpty()) {
+                encodedFrameCount++
+                encodedByteCount += packet.size
+                if (encodedFrameCount == 1L || encodedFrameCount % 60L == 0L) {
+                    Log.i(
+                        TAG,
+                        "AVC packets=$encodedFrameCount bytes=$encodedByteCount " +
+                            "size=${width}x$height ptsUs=$pts flags=$flags"
+                    )
+                    updateNotification("AVC 编码中 · ${encodedFrameCount} 包")
                 }
-            }, captureHandler)
+            }
         }
+        result.start()
+        return result
     }
 
     private fun resizeCapture(sourceWidth: Int, sourceHeight: Int) {
@@ -150,32 +146,31 @@ class ProjectionCaptureService : Service() {
         if (size.first == outputWidth && size.second == outputHeight) return
 
         val replacement = try {
-            createReader(size.first, size.second)
+            createEncoder(size.first, size.second)
         } catch (error: Exception) {
-            Log.e(TAG, "Unable to allocate resized ImageReader", error)
+            Log.e(TAG, "Unable to allocate resized AVC encoder", error)
             return
         }
 
-        val old = imageReader
+        val old = encoder
         try {
             display.resize(size.first, size.second, densityDpi)
-            display.setSurface(replacement.surface)
-            imageReader = replacement
+            display.setSurface(replacement.inputSurface)
+            encoder = replacement
             outputWidth = size.first
             outputHeight = size.second
-            old?.setOnImageAvailableListener(null, null)
-            old?.close()
-            Log.i(TAG, "Capture resized to ${outputWidth}x${outputHeight}")
+            old?.stop()
+            Log.i(TAG, "AVC capture resized to ${outputWidth}x${outputHeight}")
         } catch (error: Exception) {
-            Log.e(TAG, "Unable to retarget capture surface", error)
-            replacement.close()
+            Log.e(TAG, "Unable to retarget AVC input surface", error)
+            replacement.stop()
         }
     }
 
     private fun getScreenMetrics(): DisplayMetrics {
         val metrics = DisplayMetrics()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val bounds = (getSystemService(WindowManager::class.java)).maximumWindowMetrics.bounds
+            val bounds = getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds
             metrics.widthPixels = bounds.width()
             metrics.heightPixels = bounds.height()
             metrics.densityDpi = resources.configuration.densityDpi
@@ -188,10 +183,9 @@ class ProjectionCaptureService : Service() {
 
     private fun fitWithin(width: Int, height: Int, maxEdge: Int): Pair<Int, Int> {
         val scale = minOf(1f, maxEdge.toFloat() / max(width, height).toFloat())
-        return Pair(
-            (width * scale).roundToInt().coerceAtLeast(2),
-            (height * scale).roundToInt().coerceAtLeast(2)
-        )
+        val outWidth = (width * scale).roundToInt().coerceAtLeast(2)
+        val outHeight = (height * scale).roundToInt().coerceAtLeast(2)
+        return Pair(outWidth - outWidth % 2, outHeight - outHeight % 2)
     }
 
     private fun startForegroundCompat() {
@@ -265,16 +259,19 @@ class ProjectionCaptureService : Service() {
         }
         virtualDisplay = null
         try {
-            imageReader?.setOnImageAvailableListener(null, null)
-            imageReader?.close()
+            encoder?.stop()
         } catch (error: Exception) {
-            Log.w(TAG, "ImageReader release failed", error)
+            Log.w(TAG, "AVC encoder release failed", error)
         }
-        imageReader = null
+        encoder = null
         val activeProjection = projection
         projection = null
         try {
             activeProjection?.unregisterCallback(projectionCallback)
+        } catch (error: Exception) {
+            Log.w(TAG, "MediaProjection callback unregister failed", error)
+        }
+        try {
             activeProjection?.stop()
         } catch (error: Exception) {
             Log.w(TAG, "MediaProjection stop failed", error)
@@ -307,6 +304,5 @@ class ProjectionCaptureService : Service() {
         private const val NOTIFICATION_ID = 41
         private const val MAX_EDGE = 1280
         private const val RESULT_OK = -1
-
     }
 }

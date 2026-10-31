@@ -27,35 +27,36 @@ class MainActivity : Activity() {
         }
 
         content.addView(text("CivicMirror", 28f, true))
-        content.addView(text("独立 Android Auto 镜像项目 · 0.2.0", 16f, false))
-        content.addView(section("屏幕捕获测试"))
+        content.addView(text("独立 Android Auto 镜像项目 · 0.3.0", 16f, false))
+        content.addView(section("屏幕采集与编码测试"))
 
         status = text("状态：尚未启动。点击下方按钮并在系统弹窗中允许屏幕捕获。", 15f, false)
         content.addView(status)
 
-        content.addView(button("开始屏幕捕获") { requestCapture() })
-        content.addView(button("停止屏幕捕获") {
+        content.addView(button("开始屏幕捕获与 H.264 编码") { requestCapture() })
+        content.addView(button("停止捕获与编码") {
             startService(Intent(this, ProjectionCaptureService::class.java).setAction(ProjectionCaptureService.ACTION_STOP))
             status.text = "状态：已发送停止请求"
         })
 
         content.addView(section("当前实现"))
         listOf(
-            "MediaProjection 用户授权流程",
-            "前台服务维持捕获会话",
-            "ImageReader 接收 RGBA 帧并及时释放",
-            "Android 14+ 捕获区域尺寸变化处理",
-            "每次授权只创建一个 VirtualDisplay"
+            "MediaProjection 用户授权与前台服务",
+            "VirtualDisplay 直接输出到 MediaCodec Surface",
+            "H.264 / AVC 硬件编码，默认 1280 长边、30 fps、4 Mbps",
+            "编码数据包统计与时间戳记录",
+            "Android 14+ 捕获区域变化时重建编码器并切换 Surface",
+            "不修改手机物理屏幕分辨率或 DPI"
         ).forEach { content.addView(text("•  $it", 14f, false)) }
 
-        content.addView(section("下一阶段"))
+        content.addView(section("车机通道状态"))
         content.addView(text(
-            "当前捕获帧用于验证手机端采集链路，尚未输出到 Android Auto 车机 Surface。之后接入车机画面通道、分辨率与帧率设置，再验证触控回传。",
+            "H.264 编码链路已接入，但编码数据目前只在手机端统计，尚未传输到 Android Auto。普通 Android Auto Surface 不是任意视频投屏接口；需继续验证官方准入路线与独立传输方案。",
             14f, false
         ))
         content.addView(section("系统限制"))
         content.addView(text(
-            "每次捕获都需要系统授权。DRM 或安全窗口可能显示黑屏。Shizuku 不能绕过 MediaProjection 授权限制。",
+            "每次捕获都需要系统授权。DRM 或 FLAG_SECURE 内容可能黑屏。Shizuku 不能绕过 MediaProjection 授权，也不能自动获得 Android Auto 视频入口。",
             14f, false
         ))
 
@@ -88,7 +89,7 @@ class MainActivity : Activity() {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(serviceIntent)
         else startService(serviceIntent)
-        status.text = "状态：已提交捕获会话，查看系统持续通知确认运行状态"
+        status.text = "状态：已提交捕获与编码会话，查看持续通知确认编码包计数"
     }
 
     private fun section(value: String) =
