@@ -96,55 +96,6 @@
         </FrameLayout>
 
         <FrameLayout
-            android:id="@+id/panel_shizuku"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:background="@drawable/bg_info_card"
-            android:elevation="2dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="@dimen/content_padding">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Shizuku 权限桥接"
-                    android:textColor="@color/color_text_secondary"
-                    android:textSize="16sp" />
-
-                <TextView
-                    android:id="@+id/tv_shizuku_state"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:text="正在检查 Shizuku 服务…"
-                    android:textColor="@color/color_text_primary"
-                    android:textSize="15sp" />
-
-                <TextView
-                    android:id="@+id/tv_shizuku_detail"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:text="Shizuku 用于受限系统操作；不替代 LSPosed 注入。"
-                    android:textColor="@color/color_text_secondary"
-                    android:textSize="12sp" />
-
-                <Button
-                    android:id="@+id/btn_shizuku_permission"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:minHeight="44dp"
-                    android:text="请求 Shizuku 授权" />
-            </LinearLayout>
-        </FrameLayout>
-
-        <FrameLayout
             android:id="@+id/mcv_channel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
