@@ -68,17 +68,39 @@ jobs:
           cp hybrid/android-overlay/aa-display/src/main/res/layout/activity_main.xml \
             upstream/aa-display/src/main/res/layout/
 
-
       - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
         run: |
           chmod +x ./gradlew
           ./gradlew --no-daemon :aa-display:assembleDebug
 
-      - name: Build minified release candidate (not device-validated)
+      - name: Build minified release candidate
+        working-directory: upstream
+        run: ./gradlew --no-daemon :aa-display:assembleRelease
+
+      - name: Sign and verify release APK
         working-directory: upstream
         run: |
-          ./gradlew --no-daemon :aa-display:assembleRelease
+          set -euo pipefail
+          APK="$(find aa-display/build/outputs/apk/release -maxdepth 1 -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          BUILD_TOOLS="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          test -x "$APKSIGNER"
+          mkdir -p signed
+          keytool -genkeypair -v -keystore "$RUNNER_TEMP/aadisplay-release-test.jks" \
+            -storepass android -keypass android -alias aadisplay \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=AADisplay Hybrid Test,O=Build Verification,C=SG"
+          "$APKSIGNER" sign --ks "$RUNNER_TEMP/aadisplay-release-test.jks" \
+            --ks-pass pass:android --key-pass pass:android \
+            --out signed/AADisplay-Hybrid-release.apk "$APK"
+          "$APKSIGNER" verify --verbose --print-certs signed/AADisplay-Hybrid-release.apk
+          unzip -t signed/AADisplay-Hybrid-release.apk
+          if strings signed/AADisplay-Hybrid-release.apk | grep -iE 'rikka\.shizuku|ShizukuProvider|ShizukuService|shizuku'; then
+            echo "Unexpected Shizuku reference found in APK"
+            exit 1
+          fi
 
       - name: Upload baseline APK for build-chain verification
         uses: actions/upload-artifact@v4
@@ -88,10 +110,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Upload minified release candidate for inspection
+      - name: Upload signed release candidate (test key; not device-validated)
         uses: actions/upload-artifact@v4
         with:
-          name: aadisplay-hybrid-minified-candidate-NOT-DEVICE-VALIDATED
-          path: upstream/aa-display/build/outputs/apk/release/*.apk
+          name: aadisplay-hybrid-signed-release-candidate-NOT-DEVICE-VALIDATED
+          path: upstream/signed/AADisplay-Hybrid-release.apk
           if-no-files-found: error
           retention-days: 7
