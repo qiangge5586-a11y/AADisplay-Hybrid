@@ -8,7 +8,7 @@ Android display experimentation workspace. The repository originally integrated 
 
 The existing Android Auto virtual-display code is not a CarPlay sender and cannot be relabeled or represented as one. The first milestone is a non-invasive USB capability probe; only proceed to protocol work if the phone and a lawful implementation path support it.
 
-See [Wired CarPlay USB Feasibility — Phase 0](docs/USB-CARPLAY-USB-FEASIBILITY.md) for the scope, probe requirements, safety boundaries, and go/no-go criteria.
+See [Wired CarPlay USB Feasibility — Phase 0](docs/USB-CARPLAY-USB-FEASIBILITY.md) for the scope and [open-source CarPlay research](docs/OPEN_SOURCE_CARPLAY_RESEARCH.md) for the receiver/sender architecture comparison and current go/no-go gates.
 
 ## Legacy Android Auto integration
 
@@ -50,7 +50,7 @@ See the upstream GPL-3.0 license and preserve all source notices.
 
 ## Standalone USB diagnostic APK
 
-A separate read-only Android diagnostic app is available under [usb-probe](usb-probe/). It reports device/build information, USB Host/Accessory enumeration, and read-only visibility of common USB Gadget paths. It does not change USB role, write sysfs/configfs, or request privileged access.
+A separate read-only Android diagnostic app is available under [usb-probe](usb-probe/). Version 0.1.1 reports device/build information, USB Host/Accessory enumeration, allowlisted read-only USB system properties, and visibility of common USB Gadget / role / Type-C paths. It does not change USB role, write sysfs/configfs, or request privileged access.
 
 The **Build USB Probe APK** GitHub Actions workflow produces an installable debug APK artifact. Open the workflow run and download the `aadisplay-usb-probe-debug` artifact. Install it on the OnePlus Ace 5, run the scan, and share the report for analysis.
 
