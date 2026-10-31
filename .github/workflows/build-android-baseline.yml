@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - ".github/workflows/build-android-baseline.yml"
+      - "android-integration/**"
+      - "core/src/main/kotlin/io/github/nitsuya/aa/display/shizuku/**"
 
 permissions:
   contents: read
@@ -64,6 +66,13 @@ jobs:
             upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/ui/main/
           cp hybrid/android-overlay/aa-display/src/main/res/layout/activity_main.xml \
             upstream/aa-display/src/main/res/layout/
+
+
+      - name: Integrate Shizuku API into Android app
+        working-directory: upstream
+        run: |
+          python3 -c "from pathlib import Path; p=Path('aa-display/build.gradle.kts'); s=p.read_text(); marker='    implementation(\\\"androidx.core:core-ktx:1.17.0\\\")'; s=s if 'dev.rikka.shizuku:api:13.1.5' in s else s.replace(marker, '    implementation(\\\"dev.rikka.shizuku:api:13.1.5\\\")\\\\n    implementation(\\\"dev.rikka.shizuku:provider:13.1.5\\\")\\\\n'+marker); p.write_text(s)"
+          python3 -c "from pathlib import Path; p=Path('aa-display/src/main/AndroidManifest.xml'); s=p.read_text(); provider='    <provider android:name=\\\"rikka.shizuku.ShizukuProvider\\\" android:authorities=\\\"\${applicationId}.shizuku\\\" android:multiprocess=\\\"false\\\" android:enabled=\\\"true\\\" android:exported=\\\"true\\\" android:permission=\\\"android.permission.INTERACT_ACROSS_USERS_FULL\\\" />'; s=s if 'rikka.shizuku.ShizukuProvider' in s else s.replace('    </application>', provider+'\\\\n    </application>'); p.write_text(s)"
 
       - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
