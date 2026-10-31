@@ -19,6 +19,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.InputStreamReader;
 import java.util.Locale;
 import java.util.Map;
 
@@ -68,7 +71,7 @@ public final class MainActivity extends Activity {
 
     private void refreshReport() {
         StringBuilder out = new StringBuilder();
-        out.append("AADisplay USB Probe 0.1.0\n");
+        out.append("AADisplay USB Probe 0.1.1\n");
         out.append("检测时间：").append(java.text.DateFormat.getDateTimeInstance().format(new java.util.Date())).append("\n\n");
         out.append("[设备信息]\n");
         out.append("制造商：").append(Build.MANUFACTURER).append('\n');
@@ -100,6 +103,23 @@ public final class MainActivity extends Activity {
         appendPath(out, "/sys/class/android_usb");
         appendPath(out, "/sys/class/android_usb/android0");
         appendPath(out, "/sys/class/udc");
+        out.append("\n[USB 系统属性只读]\n");
+        String[] properties = {
+                "sys.usb.config", "sys.usb.state", "persist.sys.usb.config",
+                "sys.usb.controller", "ro.bootmode", "ro.hardware",
+                "vendor.usb.config", "vendor.usb.state"
+        };
+        for (String key : properties) {
+            out.append(key).append(" = ").append(readProperty(key)).append('\n');
+        }
+
+        out.append("\n[USB Role / Type-C 节点只读]\n");
+        appendDirectory(out, "/sys/class/usb_role", 8);
+        appendDirectory(out, "/sys/class/typec", 8);
+        appendDirectory(out, "/sys/bus/usb/devices", 20);
+        appendRoleFields(out, "/sys/class/usb_role");
+        appendRoleFields(out, "/sys/class/typec");
+
         out.append("\n注意：exists=false 可能代表节点不存在，也可能是系统隐藏；不能据此断言硬件不支持。\n\n");
 
         out.append("[供电状态]\n");
@@ -119,6 +139,61 @@ public final class MainActivity extends Activity {
 
         latestReport = out.toString();
         reportView.setText(latestReport);
+    }
+
+    private String readProperty(String key) {
+        try {
+            Process process = new ProcessBuilder("getprop", key).redirectErrorStream(true).start();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+            String value = reader.readLine();
+            reader.close();
+            process.destroy();
+            return value == null || value.trim().isEmpty() ? "(empty or hidden)" : value.trim();
+        } catch (Exception e) {
+            return "(unavailable: " + e.getClass().getSimpleName() + ")";
+        }
+    }
+
+    private void appendDirectory(StringBuilder out, String path, int limit) {
+        File dir = new File(path);
+        out.append(path).append(" | exists=").append(dir.exists())
+                .append(" readable=").append(dir.canRead())
+                .append(" directory=").append(dir.isDirectory()).append('\n');
+        if (!dir.isDirectory() || !dir.canRead()) return;
+        File[] children = dir.listFiles();
+        if (children == null) {
+            out.append("  (listing blocked)\n");
+            return;
+        }
+        int count = Math.min(children.length, limit);
+        for (int i = 0; i < count; i++) out.append("  ").append(children[i].getName()).append('\n');
+        if (children.length > limit) out.append("  ... truncated; total entries=").append(children.length).append('\n');
+    }
+
+    private void appendRoleFields(StringBuilder out, String root) {
+        File dir = new File(root);
+        if (!dir.isDirectory() || !dir.canRead()) return;
+        File[] ports = dir.listFiles();
+        if (ports == null) return;
+        int limit = Math.min(ports.length, 8);
+        for (int i = 0; i < limit; i++) {
+            File port = ports[i];
+            out.append(port.getAbsolutePath()).append('\n');
+            for (String field : new String[]{"data_role", "power_role", "port_type"}) {
+                out.append("  ").append(field).append(" = ")
+                        .append(readTextFile(new File(port, field))).append('\n');
+            }
+        }
+    }
+
+    private String readTextFile(File file) {
+        if (!file.exists() || !file.canRead() || !file.isFile()) return "(not readable)";
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String value = reader.readLine();
+            return value == null ? "(empty)" : value.trim();
+        } catch (Exception e) {
+            return "(unavailable: " + e.getClass().getSimpleName() + ")";
+        }
     }
 
     private void appendPath(StringBuilder out, String path) {
