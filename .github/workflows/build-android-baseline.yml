@@ -98,8 +98,14 @@ jobs:
                   android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
           '''
           if "rikka.shizuku.ShizukuProvider" not in source:
-              source = source.replace("    </application>", provider + "\n    </application>")
+              closing = "    </application>"
+              if closing not in source:
+                  raise SystemExit("AndroidManifest.xml application closing tag not found")
+              source = source.replace(closing, provider + "\n" + closing, 1)
+          if "rikka.shizuku.ShizukuProvider" not in source:
+              raise SystemExit("ShizukuProvider injection failed")
           manifest.write_text(source)
+          print("Verified ShizukuProvider in merged app manifest source")
           PY
 
       - name: Build upstream debug APK (integration compile check; not final hybrid)
