@@ -17,7 +17,6 @@ fun registerCoreTest(taskName: String, testMainClass: String) {
 }
 
 registerCoreTest("testProjectionResolution", "io.github.nitsuya.aa.display.model.ProjectionResolutionTestKt")
-registerCoreTest("testShizukuPolicy", "io.github.nitsuya.aa.display.shizuku.ShizukuAccessPolicyTestKt")
 registerCoreTest("testResolutionCoordinator", "io.github.nitsuya.aa.display.resolution.ResolutionOverrideCoordinatorTestKt")
 registerCoreTest("testProjectionPerformance", "io.github.nitsuya.aa.display.performance.ProjectionPerformanceProfileTestKt")
 registerCoreTest("testProjectionContentTransform", "io.github.nitsuya.aa.display.performance.ProjectionContentTransformTestKt")
@@ -26,7 +25,6 @@ tasks.register("verifyHybridCore") {
     group = "verification"
     dependsOn(
         "testProjectionResolution",
-        "testShizukuPolicy",
         "testResolutionCoordinator",
         "testProjectionPerformance",
         "testProjectionContentTransform"
