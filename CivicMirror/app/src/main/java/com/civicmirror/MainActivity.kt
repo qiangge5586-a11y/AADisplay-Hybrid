@@ -12,10 +12,13 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.civicmirror.capture.ProjectionCaptureService
+import com.civicmirror.usb.UsbAccessoryProbe
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
+    private lateinit var usbStatus: TextView
     private lateinit var projectionManager: MediaProjectionManager
+    private lateinit var usbProbe: UsbAccessoryProbe
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,9 +30,19 @@ class MainActivity : Activity() {
         }
 
         content.addView(text("CivicMirror", 28f, true))
-        content.addView(text("独立 Android Auto 镜像项目 · 0.4.0", 16f, false))
-        content.addView(section("屏幕采集、H.264 编码与 MP4 验证"))
+        content.addView(text("独立 Android Auto 镜像项目 · 0.5.0", 16f, false))
 
+        content.addView(section("原厂 USB Android Auto 接口诊断"))
+        usbStatus = text("尚未检测。连接车机 USB 后点击下方按钮。", 14f, false)
+        content.addView(usbStatus)
+        content.addView(button("检测 USB AOA 接口") { usbProbe.probe() })
+        content.addView(text(
+            "此检测只确认系统是否把车机识别为 Android Auto USB accessory，以及应用能否打开 USB 句柄；" +
+                "不会发送 AAP 数据，也不代表车机投屏已经连通。",
+            13f, false
+        ))
+
+        content.addView(section("屏幕采集、H.264 编码与 MP4 验证"))
         status = text("状态：尚未启动。开始后允许系统屏幕捕获；停止时会封装 MP4 文件。", 15f, false)
         content.addView(status)
 
@@ -39,14 +52,15 @@ class MainActivity : Activity() {
             status.text = "状态：已发送停止请求。录制文件保存在 Android/data/com.civicmirror.debug/files/Movies/CivicMirror/"
         })
 
-        content.addView(section("0.4.0 已实现"))
+        content.addView(section("0.5.0 已实现"))
         listOf(
             "MediaProjection 用户授权与前台服务",
             "VirtualDisplay 直接输出到 MediaCodec Surface",
             "H.264 / AVC 硬件编码，默认 1280 长边、30 fps、4 Mbps",
             "按编码器输出格式创建 MP4，写入关键帧标记和时间戳",
             "捕获尺寸变化时切换编码器并分段保存 MP4",
-            "停止时安全结束 MP4 封装；不修改手机物理分辨率或 DPI"
+            "USB AOA accessory 识别、系统授权请求与句柄打开诊断",
+            "不修改手机物理屏幕分辨率或 DPI"
         ).forEach { content.addView(text("•  $it", 14f, false)) }
 
         content.addView(section("录制文件位置"))
@@ -57,16 +71,24 @@ class MainActivity : Activity() {
 
         content.addView(section("车机通道状态"))
         content.addView(text(
-            "MP4 只用于确认手机采集与编码链路，不是车机传输。Android Auto 普通应用接口不是通用屏幕投屏接口；视频传输与触控回传仍需独立实现和实车验证。",
+            "USB AOA 诊断不等于 AAP 协议连接。AAP/TLS 握手、H.264 视频通道和触控回传仍未实现；" +
+                "需要先确认本田车机是否接受第三方手机证书，再推进视频投屏。",
             14f, false
         ))
         content.addView(section("系统限制"))
         content.addView(text(
-            "每次捕获都需要系统授权。DRM 或 FLAG_SECURE 内容可能黑屏。Shizuku 不能绕过 MediaProjection 授权，也不能自动获得 Android Auto 视频入口。",
+            "每次捕获都需要系统授权。DRM 或 FLAG_SECURE 内容可能黑屏。Shizuku 不能绕过 MediaProjection 授权，" +
+                "也不能自动获得 Android Auto 视频入口。",
             14f, false
         ))
 
+        usbProbe = UsbAccessoryProbe(this) { usbStatus.text = it }
         setContentView(ScrollView(this).apply { addView(content) })
+    }
+
+    override fun onDestroy() {
+        if (::usbProbe.isInitialized) usbProbe.dispose()
+        super.onDestroy()
     }
 
     private fun requestCapture() {
