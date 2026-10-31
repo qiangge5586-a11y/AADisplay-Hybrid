@@ -4,21 +4,33 @@
 
 ## 当前状态
 
-**0.3.0：手机端屏幕采集 + H.264 硬件编码已接入；车机传输尚未实现。**
+**0.4.0：手机端屏幕采集、H.264 硬件编码和 MP4 本地验证录制已接入；车机传输尚未实现。**
 
 已实现：
 - MediaProjection 用户授权与前台服务
-- VirtualDisplay 直接输出到 MediaCodec Surface，避免 ImageReader 的 RGBA CPU 拷贝
+- VirtualDisplay 直接输出到 MediaCodec Surface，避免 ImageReader RGBA CPU 拷贝
 - H.264 / AVC 编码（默认 1280 长边、30 fps、4 Mbps、无 B 帧以降低延迟）
-- 编码包、字节数与 PTS 统计
-- Android 14+ 捕获尺寸变化时重建编码器并切换现有 VirtualDisplay 的 Surface
-- 不修改手机物理分辨率或 DPI
+- 根据编码器输出格式建立 MP4 容器，写入视频样本、关键帧标记和 PTS
+- 捕获尺寸变化时创建新的编码器和独立 MP4 分段
+- 录制文件保存在应用专属外部 Movies/CivicMirror 目录
+- 不修改手机物理屏幕分辨率或 DPI
 
 尚未实现：
 - Android Auto 车机视频传输 / 接收端
 - OpenGL 画面缩放、Fit/Fill 和自定义分辨率设置 UI
 - 车机触控回传
 - DHU / 本田实车验证
+
+## MP4 验证方法
+
+1. 安装 debug APK，打开 CivicMirror。
+2. 点击“开始屏幕捕获与 MP4 录制”，在系统弹窗中允许。
+3. 保持屏幕显示动态内容一段时间。
+4. 点击“停止捕获并保存 MP4”。
+5. 检查 `Android/data/com.civicmirror.debug/files/Movies/CivicMirror/` 下生成的 MP4；尺寸变化时会产生独立分段。
+6. 用手机播放器打开 MP4，确认画面和时序正常。
+
+若录制目录没有文件，或文件不能播放，先检查 Android 日志中的 `CivicMirrorAVC` 与 `CivicMirrorMP4` 标签。
 
 ## Android Auto 通道可行性
 
@@ -42,17 +54,11 @@ Google 在 2026 年宣布计划逐步把停车状态下的视频应用体验扩�
 gradle :app:assembleDebug
 ```
 
-APK 预期输出：
-
-```
-app/build/outputs/apk/debug/app-debug.apk
-```
-
-仓库根目录的 GitHub Actions 工作流会构建本工程并上传 debug APK artifact。
+APK 预期输出：`app/build/outputs/apk/debug/app-debug.apk`。
 
 ## 技术路线
 
-`MediaProjection -> VirtualDisplay -> MediaCodec AVC Surface -> encoded packet sink -> validated car transport`
+`MediaProjection -> VirtualDisplay -> MediaCodec AVC Surface -> MP4 validation -> validated car transport`
 
 触控回传作为独立模块验证，优先评估 AccessibilityService 的能力和限制。
 
@@ -63,4 +69,4 @@ app/build/outputs/apk/debug/app-debug.apk
 - DRM / FLAG_SECURE 内容可能无法捕获。
 - 编码分辨率不等于修改手机物理屏幕分辨率。
 - 普通侧载 APK 是否显示在真实 Android Auto 界面，必须通过 DHU 和实车验证。
-- 当前编码包没有传输到车机，0.3.0 不是完整镜像成品。
+- 当前 MP4 是手机端链路验证，不是车机镜像成品。

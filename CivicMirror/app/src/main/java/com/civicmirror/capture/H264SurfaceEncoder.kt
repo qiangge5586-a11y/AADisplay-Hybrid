@@ -11,16 +11,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Surface-input AVC encoder. MediaProjection renders directly into the codec input
  * surface, avoiding ImageReader RGBA copies on the hot path.
- *
- * The encoded callback is a transport seam; it does not imply an Android Auto
- * transport is available.
  */
 class H264SurfaceEncoder(
     private val width: Int,
     private val height: Int,
     private val bitRate: Int = DEFAULT_BIT_RATE,
     private val frameRate: Int = DEFAULT_FRAME_RATE,
-    private val onEncodedPacket: (ByteArray, Int, Long) -> Unit
+    private val onEncodedPacket: (ByteArray, Int, Long) -> Unit,
+    private val onOutputFormat: (MediaFormat) -> Unit
 ) {
     private val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
     private val running = AtomicBoolean(false)
@@ -73,14 +71,17 @@ class H264SurfaceEncoder(
                                 buffer.position(info.offset)
                                 buffer.limit(info.offset + info.size)
                                 buffer.get(packet)
-                                onEncodedPacket(packet, info.flags, info.presentationTimeUs)
+                                if ((info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0 &&
+                                    (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) == 0) {
+                                    onEncodedPacket(packet, info.flags, info.presentationTimeUs)
+                                }
                             }
                         } finally {
                             codec.releaseOutputBuffer(index, false)
                         }
                     }
                     index == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED ->
-                        Log.i(TAG, "AVC output format: ${codec.outputFormat}")
+                        onOutputFormat(codec.outputFormat)
                     index == MediaCodec.INFO_TRY_AGAIN_LATER -> Unit
                 }
             } catch (error: IllegalStateException) {
@@ -99,7 +100,7 @@ class H264SurfaceEncoder(
         running.set(false)
         drainThread?.interrupt()
         try {
-            drainThread?.join(500)
+            drainThread?.join(1_500)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
         }

@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.MediaFormat
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -22,13 +23,14 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * MediaProjection -> hardware AVC encoder. The encoder input Surface is the
- * VirtualDisplay target, avoiding a CPU-side RGBA frame copy.
+ * MediaProjection -> hardware AVC encoder -> MP4 segment.
+ * MP4 is a local validation artifact, not an Android Auto transport.
  */
 class ProjectionCaptureService : Service() {
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var encoder: H264SurfaceEncoder? = null
+    private var recorder: Mp4SegmentRecorder? = null
     private var captureThread: HandlerThread? = null
     private var captureHandler: Handler? = null
     private var stopped = false
@@ -112,8 +114,8 @@ class ProjectionCaptureService : Service() {
                 null,
                 captureHandler
             )
-            updateNotification("AVC 硬件编码运行中 · 等待首帧")
-            Log.i(TAG, "Capture/AVC started at ${outputWidth}x${outputHeight}")
+            updateNotification("AVC 编码与 MP4 录制运行中 · 等待首帧")
+            Log.i(TAG, "Capture/AVC/MP4 started at ${outputWidth}x${outputHeight}")
         } catch (error: Exception) {
             Log.e(TAG, "Unable to start screen capture/AVC encoder", error)
             stopCapture()
@@ -122,22 +124,39 @@ class ProjectionCaptureService : Service() {
     }
 
     private fun createEncoder(width: Int, height: Int): H264SurfaceEncoder {
-        val result = H264SurfaceEncoder(width, height) { packet, flags, pts ->
-            if (packet.isNotEmpty()) {
-                encodedFrameCount++
-                encodedByteCount += packet.size
-                if (encodedFrameCount == 1L || encodedFrameCount % 60L == 0L) {
-                    Log.i(
-                        TAG,
-                        "AVC packets=$encodedFrameCount bytes=$encodedByteCount " +
-                            "size=${width}x$height ptsUs=$pts flags=$flags"
-                    )
-                    updateNotification("AVC 编码中 · ${encodedFrameCount} 包")
+        val segmentRecorder = Mp4SegmentRecorder(this)
+        val result = H264SurfaceEncoder(
+            width,
+            height,
+            onEncodedPacket = { packet, flags, pts ->
+                segmentRecorder.writeSample(packet, flags, pts)
+                if (packet.isNotEmpty()) {
+                    encodedFrameCount++
+                    encodedByteCount += packet.size
+                    if (encodedFrameCount == 1L || encodedFrameCount % 60L == 0L) {
+                        Log.i(
+                            TAG,
+                            "AVC packets=$encodedFrameCount bytes=$encodedByteCount " +
+                                "size=${width}x$height ptsUs=$pts flags=$flags"
+                        )
+                        updateNotification("AVC 编码中 · ${encodedFrameCount} 包")
+                    }
                 }
+            },
+            onOutputFormat = { format: MediaFormat ->
+                segmentRecorder.startSegment(format)
+                Log.i(TAG, "AVC output format ready: $format")
             }
+        )
+        try {
+            result.start()
+            recorder = segmentRecorder
+            return result
+        } catch (error: Exception) {
+            segmentRecorder.finish()
+            result.stop()
+            throw error
         }
-        result.start()
-        return result
     }
 
     private fun resizeCapture(sourceWidth: Int, sourceHeight: Int) {
@@ -145,14 +164,16 @@ class ProjectionCaptureService : Service() {
         val size = fitWithin(sourceWidth, sourceHeight, MAX_EDGE)
         if (size.first == outputWidth && size.second == outputHeight) return
 
+        val old = encoder
+        val oldRecorder = recorder
         val replacement = try {
             createEncoder(size.first, size.second)
         } catch (error: Exception) {
             Log.e(TAG, "Unable to allocate resized AVC encoder", error)
+            recorder = oldRecorder
             return
         }
 
-        val old = encoder
         try {
             display.resize(size.first, size.second, densityDpi)
             display.setSurface(replacement.inputSurface)
@@ -160,10 +181,14 @@ class ProjectionCaptureService : Service() {
             outputWidth = size.first
             outputHeight = size.second
             old?.stop()
+            oldRecorder?.finish()
             Log.i(TAG, "AVC capture resized to ${outputWidth}x${outputHeight}")
         } catch (error: Exception) {
             Log.e(TAG, "Unable to retarget AVC input surface", error)
             replacement.stop()
+            recorder?.finish()
+            encoder = old
+            recorder = oldRecorder
         }
     }
 
@@ -264,6 +289,8 @@ class ProjectionCaptureService : Service() {
             Log.w(TAG, "AVC encoder release failed", error)
         }
         encoder = null
+        recorder?.finish()?.let { Log.i(TAG, "MP4 saved: $it") }
+        recorder = null
         val activeProjection = projection
         projection = null
         try {
