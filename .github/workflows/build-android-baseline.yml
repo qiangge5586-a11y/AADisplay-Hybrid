@@ -71,10 +71,23 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon :aa-display:assembleDebug
 
+      - name: Build minified release candidate (not device-validated)
+        working-directory: upstream
+        run: |
+          ./gradlew --no-daemon :aa-display:assembleRelease
+
       - name: Upload baseline APK for build-chain verification
         uses: actions/upload-artifact@v4
         with:
           name: aadisplay-upstream-baseline-NOT-OPTIMIZED
           path: upstream/aa-display/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload minified release candidate for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: aadisplay-hybrid-minified-candidate-NOT-DEVICE-VALIDATED
+          path: upstream/aa-display/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
