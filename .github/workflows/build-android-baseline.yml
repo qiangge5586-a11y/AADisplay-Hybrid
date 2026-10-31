@@ -119,6 +119,35 @@ jobs:
         run: |
           ./gradlew --no-daemon :aa-display:assembleRelease
 
+      - name: Verify ShizukuProvider in merged release manifest and APK
+        working-directory: upstream
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          candidates = list(Path("aa-display/build/intermediates").rglob("AndroidManifest.xml"))
+          hits = []
+          for path in candidates:
+              try:
+                  root = ET.parse(path).getroot()
+              except (ET.ParseError, OSError):
+                  continue
+              for node in root.iter("provider"):
+                  if node.attrib.get("{http://schemas.android.com/apk/res/android}name") == "rikka.shizuku.ShizukuProvider":
+                      hits.append(str(path))
+          if not hits:
+              raise SystemExit("FAIL: ShizukuProvider missing from all merged release/debug manifests")
+          print("ShizukuProvider found in merged manifest:", hits)
+          PY
+          APK="$(find aa-display/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort | tail -n 1)"
+          test -x "$AAPT"
+          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee /tmp/aa-manifest.txt
+          grep -F "rikka.shizuku.ShizukuProvider" /tmp/aa-manifest.txt
+          grep -F "INTERACT_ACROSS_USERS_FULL" /tmp/aa-manifest.txt
+
       - name: Upload baseline APK for build-chain verification
         uses: actions/upload-artifact@v4
         with:
