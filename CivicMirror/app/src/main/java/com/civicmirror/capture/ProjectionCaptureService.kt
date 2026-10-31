@@ -37,6 +37,19 @@ class ProjectionCaptureService : Service() {
     private var captureHandler: Handler? = null
     private var stopped = false
     private var frameCount = 0L
+    private val projectionCallback = object : MediaProjection.Callback() {
+        override fun onStop() {
+            Log.i(TAG, "MediaProjection stopped by system or user")
+            stopCapture()
+            stopSelf()
+        }
+
+        override fun onCapturedContentResize(width: Int, height: Int) {
+            if (Build.VERSION.SDK_INT >= 34 && width > 0 && height > 0) {
+                resizeCapture(width, height)
+            }
+        }
+    }
     private var outputWidth = 0
     private var outputHeight = 0
     private var densityDpi = 0
@@ -90,19 +103,7 @@ class ProjectionCaptureService : Service() {
             val reader = createReader(outputWidth, outputHeight)
             imageReader = reader
 
-            mediaProjection.registerCallback(object : MediaProjection.Callback() {
-                override fun onStop() {
-                    Log.i(TAG, "MediaProjection stopped by system or user")
-                    stopCapture()
-                    stopSelf()
-                }
-
-                override fun onCapturedContentResize(width: Int, height: Int) {
-                    if (Build.VERSION.SDK_INT >= 34 && width > 0 && height > 0) {
-                        resizeCapture(width, height)
-                    }
-                }
-            }, captureHandler)
+            mediaProjection.registerCallback(projectionCallback, captureHandler)
 
             // One consent token -> exactly one createVirtualDisplay call.
             virtualDisplay = mediaProjection.createVirtualDisplay(
@@ -270,12 +271,14 @@ class ProjectionCaptureService : Service() {
             Log.w(TAG, "ImageReader release failed", error)
         }
         imageReader = null
-        try {
-            projection?.unregisterCallback(projectionCallbackNoop)
-        } catch (_: Exception) {
-            // The registered callback is owned by the projection and dies with it.
-        }
+        val activeProjection = projection
         projection = null
+        try {
+            activeProjection?.unregisterCallback(projectionCallback)
+            activeProjection?.stop()
+        } catch (error: Exception) {
+            Log.w(TAG, "MediaProjection stop failed", error)
+        }
         captureThread?.quitSafely()
         captureThread = null
         captureHandler = null
@@ -305,7 +308,5 @@ class ProjectionCaptureService : Service() {
         private const val MAX_EDGE = 1280
         private const val RESULT_OK = -1
 
-        // Placeholder callback is never registered; callback lifetime is managed by MediaProjection.
-        private val projectionCallbackNoop = object : MediaProjection.Callback() {}
     }
 }
