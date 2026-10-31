@@ -11,8 +11,8 @@ android {
         applicationId = "com.civicmirror"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.5.0"
+        versionCode = 5
+        versionName = "0.6.0"
     }
 
     buildTypes {
@@ -37,3 +37,4 @@ android {
         jvmTarget = "17"
     }
 }
+\n\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n}\n
