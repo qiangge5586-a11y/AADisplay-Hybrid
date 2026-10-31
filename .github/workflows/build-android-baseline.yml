@@ -75,8 +75,31 @@ jobs:
       - name: Integrate Shizuku API into Android app
         working-directory: upstream
         run: |
-          python3 -c "from pathlib import Path; p=Path('aa-display/build.gradle.kts'); s=p.read_text(); marker='    implementation(\\\"androidx.core:core-ktx:1.17.0\\\")'; s=s if 'dev.rikka.shizuku:api:13.1.5' in s else s.replace(marker, '    implementation(\\\"dev.rikka.shizuku:api:13.1.5\\\")\\\\n    implementation(\\\"dev.rikka.shizuku:provider:13.1.5\\\")\\\\n'+marker); p.write_text(s)"
-          python3 -c "from pathlib import Path; p=Path('aa-display/src/main/AndroidManifest.xml'); s=p.read_text(); provider='    <provider android:name=\\\"rikka.shizuku.ShizukuProvider\\\" android:authorities=\\\"\${applicationId}.shizuku\\\" android:multiprocess=\\\"false\\\" android:enabled=\\\"true\\\" android:exported=\\\"true\\\" android:permission=\\\"android.permission.INTERACT_ACROSS_USERS_FULL\\\" />'; s=s if 'rikka.shizuku.ShizukuProvider' in s else s.replace('    </application>', provider+'\\\\n    </application>'); p.write_text(s)"
+          python3 <<'PY'
+          from pathlib import Path
+
+          gradle = Path("aa-display/build.gradle.kts")
+          source = gradle.read_text()
+          marker = '    implementation("androidx.core:core-ktx:1.17.0")'
+          additions = '    implementation("dev.rikka.shizuku:api:13.1.5")\n    implementation("dev.rikka.shizuku:provider:13.1.5")\n'
+          if "dev.rikka.shizuku:api:13.1.5" not in source:
+              source = source.replace(marker, additions + marker)
+          gradle.write_text(source)
+
+          manifest = Path("aa-display/src/main/AndroidManifest.xml")
+          source = manifest.read_text()
+          provider = '''    <provider
+                  android:name="rikka.shizuku.ShizukuProvider"
+                  android:authorities="${applicationId}.shizuku"
+                  android:multiprocess="false"
+                  android:enabled="true"
+                  android:exported="true"
+                  android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+          '''
+          if "rikka.shizuku.ShizukuProvider" not in source:
+              source = source.replace("    </application>", provider + "\n    </application>")
+          manifest.write_text(source)
+          PY
 
       - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
