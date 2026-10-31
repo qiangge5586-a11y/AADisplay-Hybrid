@@ -22,22 +22,11 @@ import io.github.nitsuya.aa.display.carplay.CarPlayStatusUi
 import io.github.nitsuya.aa.display.databinding.ActivityMainBinding
 import io.github.nitsuya.aa.display.util.DisplayDpiStore
 import io.github.nitsuya.aa.display.util.DisplayResolutionStore
-import io.github.nitsuya.aa.display.shizuku.ShizukuAccessController
-import io.github.nitsuya.aa.display.shizuku.ShizukuAccessState
 
 class MainActivity : BaseActivity<ActivityMainBinding>(ActivityMainBinding::class.java) {
 
-    private var shizukuController: ShizukuAccessController? = null
-
     @SuppressLint("SetTextI18n")
     override fun initData() {
-        shizukuController = ShizukuAccessController { state ->
-            runOnUiThread { renderShizukuState(state) }
-        }.also { it.start() }
-        baseBinding.btnShizukuPermission.setOnClickListener {
-            shizukuController?.requestPermission()
-        }
-
         val buildTime = CoreApi.buildTime
         when (buildTime) {
             0L -> {
@@ -130,12 +119,9 @@ class MainActivity : BaseActivity<ActivityMainBinding>(ActivityMainBinding::clas
         CarPlayStatusUi.refresh(this, baseBinding)
         refreshVdDensityUi()
         refreshVdResolutionUi()
-        shizukuController?.refresh()
     }
 
     override fun onDestroy() {
-        shizukuController?.destroy()
-        shizukuController = null
         super.onDestroy()
     }
 
@@ -146,31 +132,6 @@ class MainActivity : BaseActivity<ActivityMainBinding>(ActivityMainBinding::clas
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         CarPlayStatusUi.onPermissionsResult(this, baseBinding, requestCode, grantResults)
-    }
-
-    private fun renderShizukuState(state: ShizukuAccessState) {
-        when (state) {
-            ShizukuAccessState.SERVICE_UNAVAILABLE -> {
-                baseBinding.tvShizukuState.text = "Shizuku 服务未运行"
-                baseBinding.tvShizukuDetail.text = "请先安装并启动 Shizuku，再返回此页面刷新或授权。"
-                baseBinding.btnShizukuPermission.isEnabled = false
-            }
-            ShizukuAccessState.PERMISSION_REQUIRED -> {
-                baseBinding.tvShizukuState.text = "等待 Shizuku 授权"
-                baseBinding.tvShizukuDetail.text = "点击下方按钮，在 Shizuku 弹窗中允许本应用。"
-                baseBinding.btnShizukuPermission.isEnabled = true
-            }
-            ShizukuAccessState.GRANTED_SHELL -> {
-                baseBinding.tvShizukuState.text = "已授权：ADB Shell（UID 2000）"
-                baseBinding.tvShizukuDetail.text = "可执行受限 Shell 操作；这不是 Root，也不能替代 LSPosed。"
-                baseBinding.btnShizukuPermission.isEnabled = false
-            }
-            ShizukuAccessState.GRANTED_ROOT -> {
-                baseBinding.tvShizukuState.text = "已授权：Root（UID 0）"
-                baseBinding.tvShizukuDetail.text = "Shizuku 当前由 Root 后端启动。"
-                baseBinding.btnShizukuPermission.isEnabled = false
-            }
-        }
     }
 
     private fun refreshVdDensityUi() {
