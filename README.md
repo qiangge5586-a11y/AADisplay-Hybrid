@@ -47,3 +47,11 @@ GitHub Actions currently verifies the legacy Android Auto integration build chai
 ## License
 
 See the upstream GPL-3.0 license and preserve all source notices.
+
+## Standalone USB diagnostic APK
+
+A separate read-only Android diagnostic app is available under [usb-probe](usb-probe/). It reports device/build information, USB Host/Accessory enumeration, and read-only visibility of common USB Gadget paths. It does not change USB role, write sysfs/configfs, or request privileged access.
+
+The **Build USB Probe APK** GitHub Actions workflow produces an installable debug APK artifact. Open the workflow run and download the `aadisplay-usb-probe-debug` artifact. Install it on the OnePlus Ace 5, run the scan, and share the report for analysis.
+
+This probe is diagnostic only. It is not a CarPlay sender and does not establish wired CarPlay compatibility.
