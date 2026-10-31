@@ -45,3 +45,12 @@ Even after USB gadget control is available, the project still needs a lawful iAP
 - Apple MFi eligibility; iAP2 over USB and vehicles supporting CarPlay over USB are in scope: https://mfi.apple.com/en/who-should-join
 - Android USB HAL architecture: https://source.android.com/docs/core/permissions/usb-hal
 - Linux USB gadget ConfigFS model: https://docs.kernel.org/usb/gadget_configfs.html
+## Running the first probe
+
+A read-only ADB helper is provided at `tools/probe-usb-readonly.sh`. On a computer with Android Platform Tools installed, connect the phone, enable USB debugging, authorize the computer, then run:
+
+```sh
+bash tools/probe-usb-readonly.sh
+```
+
+The script reports public build/USB properties and read-only path access checks. It does not change USB mode or write to gadget nodes. Share its output for analysis after reviewing it for any device-specific details you do not want to disclose.
