@@ -1,14 +1,14 @@
 # AADisplay Hybrid
 
-Android display experimentation workspace. The repository originally integrated custom virtual-display resolution controls into an AADisplay Android Auto source tree. The active requested direction has since changed to investigating a **direct USB Android-to-wired-CarPlay sender** for a OnePlus Ace 5 / ColorOS 16 and a 2019 Honda Civic factory head unit.
+Android display experimentation workspace. The original Android Auto virtual-display work remains a separate legacy component. The active direction is now a **wireless CarPlay sender for OnePlus Ace 5 / Android 16**, intended to connect to DiPlay installed on the vehicle head unit. USB transport is out of scope.
 
 ## Project status
 
-**Wired CarPlay sender: not implemented. USB feasibility: investigation phase.**
+**Wireless sender: research and architecture phase; no working sender APK is available yet.**
 
-The existing Android Auto virtual-display code is not a CarPlay sender and cannot be relabeled or represented as one. The first milestone is a non-invasive USB capability probe; only proceed to protocol work if the phone and a lawful implementation path support it.
+The existing Android Auto virtual-display code is not a CarPlay sender. The selected architecture separates the Android phone sender (iAP2 + Wi-Fi + mDNS + AirPlay) from the DiPlay receiver installed on the head unit. The current public CarDeck sender is a useful protocol reference and has reported DiPlay test-receiver interoperability, but its current implementation requires Shizuku. The requested implementation must avoid both root and Shizuku, so it needs a separate public-API display/input path and explicit compatibility tests.
 
-See [Wired CarPlay USB Feasibility — Phase 0](docs/USB-CARPLAY-USB-FEASIBILITY.md) for the scope and [open-source CarPlay research](docs/OPEN_SOURCE_CARPLAY_RESEARCH.md) for the receiver/sender architecture comparison and current go/no-go gates.
+See [Wireless CarPlay Sender Plan](docs/WIRELESS-CARPLAY-SENDER-PLAN.md) for project scope, upstream evidence, no-Shizuku constraints and milestone gates. The earlier [USB feasibility note](docs/USB-CARPLAY-USB-FEASIBILITY.md) is retained as historical research only.
 
 ## Legacy Android Auto integration
 
