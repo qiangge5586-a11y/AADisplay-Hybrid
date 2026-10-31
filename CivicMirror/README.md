@@ -4,75 +4,56 @@
 
 ## 当前状态
 
-**0.8.0：新增单连接 AAP 双向字节流会话管理及 JVM 单元测试；尚未完成 TLS 认证、服务发现和车机视频投射。**
+**0.9.0：新增持久 USB AOA 原始双向传输句柄管理；尚未完成 AAP/TLS、服务发现和车机视频投射。**
 
 已实现：
 - MediaProjection 用户授权与前台服务
-- VirtualDisplay 直接输出到 MediaCodec Surface，避免 ImageReader RGBA CPU 拷贝
-- H.264 / AVC 编码（默认 1280 长边、30 fps、4 Mbps、无 B 帧以降低延迟）
-- MP4 容器录制、视频样本、关键帧标记和 PTS
-- 捕获尺寸变化时创建新的编码器和独立 MP4 分段
-- USB AOA accessory 枚举、系统权限请求和 USB 句柄打开诊断
+- VirtualDisplay 直接输出到 MediaCodec Surface，H.264/AVC 编码及 MP4 分段录制
+- USB AOA accessory 枚举、系统权限请求
+- 持久 USB accessory 文件描述符；输入/输出 fd 分离，避免一个流关闭时误关另一个方向
+- USB accessory detach 广播触发传输清理，应用销毁时关闭句柄
 - AAP 原始帧读写、明文消息分帧、扩展长度与输入大小边界检查
-- AAP 消息分片重组：按通道独立缓存，支持跨通道交错，限制消息长度和并发组装数
-- AAP 双向字节流会话：单读线程、串行写入、完整消息回调、EOF/异常关闭和缓存清理
-- AAP 帧编解码、消息重组和流会话 JVM 单元测试
+- AAP 消息分片重组和明文双向流会话 JVM 单元测试
 - 不修改手机物理屏幕分辨率或 DPI
 
 尚未实现：
-- AAP 版本交换、TLS 1.2 双向认证和证书配置
-- Service Discovery、动态通道绑定、Ping/ByeBye
+- AAP TLS 1.2 双向认证、加密载荷/明文帧头分层
+- AAP 版本交换、Service Discovery、动态通道绑定
 - Android Auto 视频通道及 H.264 数据传输
 - Fit/Fill、自定义分辨率和 FPS 设置 UI
 - 车机触控回传
 - DHU / 本田实车视频投屏验证
 
-## 当前架构边界
+## 传输边界
 
-AAP 运行在一条双向字节流上，多路通道通过帧头复用。当前 AapStreamSession 负责这条流的生命周期、帧读取、消息重组和串行写入；它不创建 USB 句柄，也不执行 TLS 或 protobuf 解码。上层必须先建立并授权传输，再接入 TLS/协议状态机。
+0.9.0 只打开并保持 Android UsbAccessory 对应的双向文件描述符，未向车机写入数据，也未启动 AapStreamSession。当前 AapStreamSession 的帧编解码路径是明文模式；在 TLS/AAP 记录分层完成前，不能把 TLS 字节流直接交给它，否则会错误解析 TLS record 为 AAP 帧。USB 句柄打开成功仅证明 Android 系统允许应用访问 accessory，不证明车机接受 CivicMirror 的协议身份。
 
-AAP 参考资料：
-- [Channel Architecture](https://github.com/mrmees/open-android-auto/blob/main/docs/channels/architecture.md)
-- [Version & SSL Auth](https://github.com/mrmees/open-android-auto/blob/main/docs/interactions/02-version-ssl-auth.md)
-- [Open Android Auto 协议定义](https://github.com/mrmees/open-android-auto)
+## USB 测试
 
-这些项目用于核对公开协议行为；CivicMirror 保持独立实现。不会提取或伪造 Google 私有签名证书。不同 OEM 车机的证书策略和协议能力可能不同，不能用 DHU 通过替代本田实车验证。
+1. 安装 APK，使用支持数据传输的 USB 线连接原厂车机 USB 口。
+2. 解锁手机并启动 Android Auto。
+3. 点击“连接并保持 USB AOA 数据流”，按系统提示授权。
+4. 界面应显示 accessory 描述及“双向句柄已保持打开”。
+5. 点击“断开 USB 数据流”验证句柄关闭；拔线也应自动关闭。
 
-## USB AOA 诊断
+若手机/车机没有进入 USB accessory 模式，应用会提示未发现设备。不同车机的 accessory 字符串可能不同；当前识别优先匹配 Android Auto，单设备时允许诊断连接。
 
-1. 安装 CivicMirror，打开应用。
-2. 使用支持数据传输的 USB 线连接车辆原厂 Android Auto USB 口。
-3. 解锁手机，等待车机启动 Android Auto。
-4. 点击“检测 USB AOA 接口”，按系统提示授权。
-5. 查看 manufacturer、model、version，以及是否成功打开 USB 句柄。
+## MP4 验证
 
-此诊断只确认应用能否访问 Android Auto USB accessory，不会发送 AAP 协议数据，也不能证明车机已经接受 CivicMirror 的 TLS 身份。
-
-## MP4 验证方法
-
-1. 点击“开始屏幕捕获与 MP4 录制”，在系统弹窗中允许。
-2. 保持屏幕显示动态内容一段时间。
-3. 点击“停止捕获并保存 MP4”。
-4. 检查 Android/data/com.civicmirror.debug/files/Movies/CivicMirror/ 下生成的 MP4。
-5. 用手机播放器打开 MP4，确认画面和时序正常。
+点击“开始屏幕捕获与 MP4 录制”，在系统弹窗中允许；录制动态画面后点击停止，在 Android/data/com.civicmirror.debug/files/Movies/CivicMirror/ 检查 MP4。
 
 ## 构建
 
 需要 JDK 17、Gradle 8.9、Android SDK 35。
-
-在本目录执行：
 
 ```bash
 gradle :app:testDebugUnitTest
 gradle :app:assembleDebug
 ```
 
-APK 预期输出：app/build/outputs/apk/debug/app-debug.apk。
-
 ## 重要说明
 
-- MediaProjection 每次会话都必须取得用户授权。
-- Android 14+ 对 MediaProjection 会话及 VirtualDisplay 生命周期有额外限制。
-- DRM / FLAG_SECURE 内容可能无法捕获。
+- MediaProjection 每次会话都必须取得用户授权；DRM/FLAG_SECURE 内容可能无法捕获。
 - 编码分辨率不等于修改手机物理屏幕分辨率。
-- 当前版本不是车机投屏成品；TLS、服务发现、视频通道和触控回传仍未实现。
+- Shizuku 不能替代 MediaProjection 授权，也不能创造 Android Auto 视频通道。
+- 当前版本是开发测试版，不是可用的车机镜像成品；必须通过目标本田车机实测后才能判断兼容性。
