@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/workflows/build-android-baseline.yml"
       - "android-integration/**"
-      - "core/src/main/kotlin/io/github/nitsuya/aa/display/shizuku/**"
       - "android-overlay/aa-display/src/main/**"
 
 permissions:
@@ -69,45 +68,6 @@ jobs:
             upstream/aa-display/src/main/res/layout/
 
 
-          mkdir -p upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/shizuku
-          cp hybrid/core/src/main/kotlin/io/github/nitsuya/aa/display/shizuku/ShizukuAccessState.kt upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/shizuku/
-          cp hybrid/android-integration/src/main/kotlin/io/github/nitsuya/aa/display/shizuku/ShizukuAccessController.kt upstream/aa-display/src/main/java/io/github/nitsuya/aa/display/shizuku/
-
-      - name: Integrate Shizuku API into Android app
-        working-directory: upstream
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          gradle = Path("aa-display/build.gradle.kts")
-          source = gradle.read_text()
-          marker = '    implementation("androidx.core:core-ktx:1.17.0")'
-          additions = '    implementation("dev.rikka.shizuku:api:13.1.5")\n    implementation("dev.rikka.shizuku:provider:13.1.5")\n'
-          if "dev.rikka.shizuku:api:13.1.5" not in source:
-              source = source.replace(marker, additions + marker)
-          gradle.write_text(source)
-
-          manifest = Path("aa-display/src/main/AndroidManifest.xml")
-          source = manifest.read_text()
-          provider = '''    <provider
-                  android:name="rikka.shizuku.ShizukuProvider"
-                  android:authorities="${applicationId}.shizuku"
-                  android:multiprocess="false"
-                  android:enabled="true"
-                  android:exported="true"
-                  android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
-          '''
-          if "rikka.shizuku.ShizukuProvider" not in source:
-              closing = "    </application>"
-              if closing not in source:
-                  raise SystemExit("AndroidManifest.xml application closing tag not found")
-              source = source.replace(closing, provider + "\n" + closing, 1)
-          if "rikka.shizuku.ShizukuProvider" not in source:
-              raise SystemExit("ShizukuProvider injection failed")
-          manifest.write_text(source)
-          print("Verified ShizukuProvider in merged app manifest source")
-          PY
-
       - name: Build upstream debug APK (integration compile check; not final hybrid)
         working-directory: upstream
         run: |
@@ -118,35 +78,6 @@ jobs:
         working-directory: upstream
         run: |
           ./gradlew --no-daemon :aa-display:assembleRelease
-
-      - name: Verify ShizukuProvider in merged release manifest and APK
-        working-directory: upstream
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as ET
-
-          candidates = list(Path("aa-display/build/intermediates").rglob("AndroidManifest.xml"))
-          hits = []
-          for path in candidates:
-              try:
-                  root = ET.parse(path).getroot()
-              except (ET.ParseError, OSError):
-                  continue
-              for node in root.iter("provider"):
-                  if node.attrib.get("{http://schemas.android.com/apk/res/android}name") == "rikka.shizuku.ShizukuProvider":
-                      hits.append(str(path))
-          if not hits:
-              raise SystemExit("FAIL: ShizukuProvider missing from all merged release/debug manifests")
-          print("ShizukuProvider found in merged manifest:", hits)
-          PY
-          APK="$(find aa-display/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
-          test -n "$APK"
-          AAPT="$(find "$ANDROID_HOME/build-tools" -name aapt -type f | sort | tail -n 1)"
-          test -x "$AAPT"
-          "$AAPT" dump xmltree "$APK" AndroidManifest.xml | tee /tmp/aa-manifest.txt
-          grep -F "rikka.shizuku.ShizukuProvider" /tmp/aa-manifest.txt
-          grep -F "INTERACT_ACROSS_USERS_FULL" /tmp/aa-manifest.txt
 
       - name: Upload baseline APK for build-chain verification
         uses: actions/upload-artifact@v4
