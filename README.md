@@ -1,6 +1,6 @@
 # AADisplay Hybrid
 
-Android display experimentation workspace. The original Android Auto virtual-display work remains a separate legacy component. The active direction is now a **wireless CarPlay sender for OnePlus Ace 5 / Android 16**, intended to connect to DiPlay installed on the vehicle head unit. USB transport is out of scope.
+Android display experimentation workspace. The original Android Auto virtual-display work remains a separate legacy component. The active direction is a **wireless CarPlay sender for OnePlus Ace 5 / Android 16**, intended to connect to DiPlay installed on the vehicle head unit. USB transport is out of scope. The phone must not require root or Shizuku; root, if used at all, is limited to optional receiver-side integration on the head unit.
 
 ## Project status
 
@@ -8,7 +8,7 @@ Android display experimentation workspace. The original Android Auto virtual-dis
 
 The existing Android Auto virtual-display code is not a CarPlay sender. The selected architecture separates the Android phone sender (iAP2 + Wi-Fi + mDNS + AirPlay) from the DiPlay receiver installed on the head unit. The current public CarDeck sender is a useful protocol reference and has reported DiPlay test-receiver interoperability, but its current implementation requires Shizuku. The requested implementation must avoid both root and Shizuku, so it needs a separate public-API display/input path and explicit compatibility tests.
 
-See [Wireless CarPlay Sender Plan](docs/WIRELESS-CARPLAY-SENDER-PLAN.md) for project scope, upstream evidence, no-Shizuku constraints and milestone gates. The earlier [USB feasibility note](docs/USB-CARPLAY-USB-FEASIBILITY.md) is retained as historical research only.
+See [Wireless CarPlay Sender Plan](docs/WIRELESS-CARPLAY-SENDER-PLAN.md) for protocol architecture, no-Shizuku constraints and milestone gates. See [Rooted Head-Unit DiPlay Integration Assessment](docs/ROOTED-HEADUNIT-DIPLAY-INTEGRATION.md) for source-level research on rooted receiver projects, Honda safety gates and compatibility limits. The earlier [USB feasibility note](docs/USB-CARPLAY-USB-FEASIBILITY.md) is retained as historical research only.
 
 ## Legacy Android Auto integration
 
@@ -23,35 +23,32 @@ The existing integration includes:
 
 These capabilities apply to the legacy Android Auto path only. They do not provide USB gadget control, iAP2, CarPlay authentication, or a wired CarPlay session.
 
-## USB / CarPlay safety boundaries
+## Wireless CarPlay safety boundaries
 
-- No root or Shizuku requirement is assumed for the diagnostic phase.
-- The diagnostic phase must be read-only and must not modify sysfs/configfs, USB descriptors, or USB role.
-- Do not forge, extract, or bypass Apple MFi authentication credentials.
-- USB enumeration alone is not proof that CarPlay has started.
-- Do not use `wm size` or `wm density` as a substitute for virtual-display configuration; those commands alter the phone's physical display configuration.
+- Phone sender: no root, no Shizuku, no USB. Use public Android APIs and explicit user consent for capture, audio and accessibility features.
+- Receiver-side root is optional and must be limited to reversible, model-specific integration after firmware identification and backup verification.
+- Do not modify USB gadget/sysfs/configfs, Bluetooth identity, or system network settings through privilege escalation.
+- Do not forge, extract, reuse or bypass Apple MFi authentication credentials; do not claim Apple certification.
+- Preserve OEM MCU/CAN, reverse-camera/AVM, DSP/audio, thermal and factory projection services until a replacement and rollback are physically validated.
 - Preserve upstream GPL-3.0 license and notices in redistributed legacy builds.
 
 ## Target validation
 
-- Phone: OnePlus Ace 5 / ColorOS 16 (user-reported; not yet probed)
+- Phone: OnePlus Ace 5 / PLC110, Android 16 / ColorOS 16 (user-reported)
 - Vehicle: 2019 Honda Civic factory head unit
-- Desired link: direct factory USB wired CarPlay, no wireless adapter
-- Vehicle wired-CarPlay operation with a known-good iPhone: not yet verified
-- Phone USB Gadget configurability: unknown until device probe
+- Desired link: wireless Wi-Fi + Bluetooth; no USB cable
+- Receiver: DiPlay installed on the head unit; actual Honda compatibility is not yet verified
+- Phone sender: no working no-Shizuku CarPlay APK is available yet
+- Head-unit Android version, board/chipset, firmware and root method: not yet recorded
 
 ## Build verification
 
-GitHub Actions currently verifies the legacy Android Auto integration build chain. A successful build does not establish wired CarPlay capability or physical-device compatibility. No wired-CarPlay APK is available at this stage.
+GitHub Actions currently verifies the legacy Android Auto integration build chain and historical USB probe. A successful legacy build or USB probe does not establish wireless CarPlay compatibility. No wireless sender APK is available at this stage.
+
+## Historical USB diagnostic APK
+
+The separate read-only diagnostic app under [usb-probe](usb-probe/) is retained for historical research only. It is not part of the current wireless target, is not a CarPlay sender and should not be used as evidence of wireless compatibility.
 
 ## License
 
 See the upstream GPL-3.0 license and preserve all source notices.
-
-## Standalone USB diagnostic APK
-
-A separate read-only Android diagnostic app is available under [usb-probe](usb-probe/). Version 0.1.1 reports device/build information, USB Host/Accessory enumeration, allowlisted read-only USB system properties, and visibility of common USB Gadget / role / Type-C paths. It does not change USB role, write sysfs/configfs, or request privileged access.
-
-The **Build USB Probe APK** GitHub Actions workflow produces an installable debug APK artifact. Open the workflow run and download the `aadisplay-usb-probe-debug` artifact. Install it on the OnePlus Ace 5, run the scan, and share the report for analysis.
-
-This probe is diagnostic only. It is not a CarPlay sender and does not establish wired CarPlay compatibility.
