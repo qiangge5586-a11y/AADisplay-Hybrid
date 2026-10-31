@@ -2,7 +2,6 @@ package com.civicmirror.protocol
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayOutputStream
@@ -65,7 +64,7 @@ class AapStreamSessionTest {
         val message = byteArrayOf(0x01, 0x02, 0x03)
         session.send(channel = 0, control = true, message = message)
 
-        val decoded = AapFrameCodec.readFrame(outbound.toInputStream())
+        val decoded = AapFrameCodec.readFrame(outbound.toByteArray().inputStream())
         assertEquals(0, decoded.channel)
         assertTrue(decoded.isControl)
         assertArrayEquals(message, decoded.payload)
