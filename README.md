@@ -1,39 +1,48 @@
 # AADisplay Hybrid
 
-Hybrid integration workspace for the pinned AADisplay Android Auto / CarPlay source.
+Android display experimentation workspace. The repository originally integrated custom virtual-display resolution controls into an AADisplay Android Auto source tree. The active requested direction has since changed to investigating a **direct USB Android-to-wired-CarPlay sender** for a OnePlus Ace 5 / ColorOS 16 and a 2019 Honda Civic factory head unit.
 
-## Current implementation
+## Project status
+
+**Wired CarPlay sender: not implemented. USB feasibility: investigation phase.**
+
+The existing Android Auto virtual-display code is not a CarPlay sender and cannot be relabeled or represented as one. The first milestone is a non-invasive USB capability probe; only proceed to protocol work if the phone and a lawful implementation path support it.
+
+See [Wired CarPlay USB Feasibility — Phase 0](docs/USB-CARPLAY-USB-FEASIBILITY.md) for the scope, probe requirements, safety boundaries, and go/no-go criteria.
+
+## Legacy Android Auto integration
+
+The existing integration includes:
 
 - Custom Android Auto virtual render resolution (width × height), with 0 × 0 meaning automatic head-unit-negotiated size.
 - Resolution settings UI, Binder API, persistence, live apply, and reconnect re-apply.
-- Head-unit negotiated profile remains separate from the render-buffer override.
-- Split virtual-display resize uses rollback protection: cache dimensions are committed only after both pane resizes succeed.
-- LSPosed remains required for the upstream system_server / Android Auto hooks. This project does not include Shizuku.
+- Head-unit negotiated profile kept separate from the render-buffer override.
+- Split virtual-display resize rollback protection.
+- LSPosed hooks for upstream system_server / Android Auto integration.
+- No Shizuku dependency.
 
-## Build verification
+These capabilities apply to the legacy Android Auto path only. They do not provide USB gadget control, iAP2, CarPlay authentication, or a wired CarPlay session.
 
-The GitHub Actions integration workflow overlays the hybrid resolution store, Binder, service, split lifecycle, and settings UI onto the pinned upstream source, then builds debug and minified release APK candidates.
+## USB / CarPlay safety boundaries
 
-Artifacts are build outputs, not proof of physical-device compatibility.
-
-## Important compatibility and safety notes
-
+- No root or Shizuku requirement is assumed for the diagnostic phase.
+- The diagnostic phase must be read-only and must not modify sysfs/configfs, USB descriptors, or USB role.
+- Do not forge, extract, or bypass Apple MFi authentication credentials.
+- USB enumeration alone is not proof that CarPlay has started.
 - Do not use `wm size` or `wm density` as a substitute for virtual-display configuration; those commands alter the phone's physical display configuration.
-- The negotiated HU profile is retained for host geometry and touch mapping. The configured render resolution is applied separately.
-- The two split panes must retain their ratio/orientation/fullscreen-specific buffer geometry.
-- Preserve upstream GPL-3.0 license and notices in all redistributed builds.
+- Preserve upstream GPL-3.0 license and notices in redistributed legacy builds.
 
 ## Target validation
 
-- Phone: OnePlus Ace 5 / ColorOS 16
-- Head unit: 2019 Honda Civic factory head unit
-- Link: factory USB wired Android Auto
+- Phone: OnePlus Ace 5 / ColorOS 16 (user-reported; not yet probed)
+- Vehicle: 2019 Honda Civic factory head unit
+- Desired link: direct factory USB wired CarPlay, no wireless adapter
+- Vehicle wired-CarPlay operation with a known-good iPhone: not yet verified
+- Phone USB Gadget configurability: unknown until device probe
 
-## Remaining before a release APK
+## Build verification
 
-- Complete integration tests for resolution changes while connected, DPI changes, reconnects, and resize rollback.
-- Run physical-device validation for display geometry, touch mapping, stability, and frame pacing.
-- Build and inspect a minified release APK; publish only after validation.
+GitHub Actions currently verifies the legacy Android Auto integration build chain. A successful build does not establish wired CarPlay capability or physical-device compatibility. No wired-CarPlay APK is available at this stage.
 
 ## License
 
