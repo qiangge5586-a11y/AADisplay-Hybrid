@@ -37,4 +37,8 @@ android {
         jvmTarget = "17"
     }
 }
-\n\ndependencies {\n    testImplementation("junit:junit:4.13.2")\n}\n
+
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

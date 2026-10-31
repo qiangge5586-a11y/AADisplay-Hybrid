@@ -41,6 +41,9 @@ jobs:
         run: |
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Run CivicMirror protocol unit tests
+        run: gradle --no-daemon -p CivicMirror :app:testDebugUnitTest
+
       - name: Build CivicMirror debug APK
         run: gradle --no-daemon -p CivicMirror :app:assembleDebug
 
