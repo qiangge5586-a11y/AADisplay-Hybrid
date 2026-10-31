@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/build-android-baseline.yml"
       - "android-integration/**"
+      - "build.gradle.kts"
       - "android-overlay/aa-display/src/main/**"
 
 permissions:
