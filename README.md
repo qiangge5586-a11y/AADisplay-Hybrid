@@ -1,51 +1,46 @@
 # AADisplay Hybrid
 
-Hybrid development workspace for AADisplay / Android Auto projection.
+Hybrid integration workspace for the pinned AADisplay Android Auto / CarPlay source.
 
-## Goals
+## Current implementation
 
-- Shizuku-first permission assistance, with graceful fallback when Shizuku is unavailable.
-- Optional LSPosed integration for capabilities that require in-process/system-server hooks.
-- User-configurable virtual display width, height, and density (DPI).
-- Keep the head-unit negotiated display profile separate from the effective render profile.
-- Correct pane sizing, surface buffers, and touch-coordinate transforms after resolution changes.
-- Improve stability and frame pacing without changing the phone's physical display resolution.
+- Custom Android Auto virtual render resolution (width × height), with 0 × 0 meaning automatic head-unit-negotiated size.
+- Resolution settings UI, Binder API, persistence, live apply, and reconnect re-apply.
+- Head-unit negotiated profile remains separate from the render-buffer override.
+- Split virtual-display resize uses rollback protection: cache dimensions are committed only after both pane resizes succeed.
+- Shizuku access-state policy/controller scaffolding is present; it is not yet wired into the Android app UI or runtime service operations.
+- LSPosed remains required for the upstream system_server / Android Auto hooks. Shizuku shell permission does not replace those hooks.
 
-## Important compatibility note
+## Build verification
 
-Shizuku does not replace LSPosed hooks. A non-root Shizuku session can perform only operations allowed to its shell identity; it cannot independently inject hooks into Android Auto or `system_server`. Full parity with the original rooted/LSPosed behavior is therefore not promised in a Shizuku-only mode.
+The GitHub Actions integration compile check overlays the hybrid resolution store, Binder, service, split lifecycle, and settings UI onto the pinned upstream source and builds `:aa-display:assembleDebug`.
 
-## Upstream
+Latest successful integration compile check:
+https://github.com/qiangge5586-a11y/AADisplay-Hybrid/actions/runs/41111124327
 
-- Project: https://github.com/lagXkjy/AADisplay
-- Branch: `AADisplay-Split-Lite-Carplay`
-- Pinned upstream commit: `494dcc4909e8765e8798be4e7b8031fefd90a4eb`
+The generated artifact is named `aadisplay-upstream-baseline-NOT-OPTIMIZED`. It is a compile/build-chain verification APK, not a release APK and not a claim of full Shizuku-only operation.
 
-## Current status
+## Important compatibility and safety notes
 
-This repository is the hybrid integration workspace. The resolution model, Shizuku access policy, and resolution override coordinator have been prototyped and tested as pure Kotlin components. They still need to be integrated into the Android modules and validated on a physical phone/head unit before an APK can be called release-ready.
+- Shizuku can execute only operations allowed to the granted Shizuku identity (commonly shell UID 2000); it cannot independently inject hooks into `system_server` or Android Auto.
+- Do not use `wm size` or `wm density` as a substitute for virtual-display configuration; those commands alter the phone's physical display configuration.
+- The negotiated HU profile is retained for host geometry and touch mapping. The configured render resolution is applied separately.
+- The two split panes must retain their ratio/orientation/fullscreen-specific buffer geometry.
+- Preserve upstream GPL-3.0 license and notices in all redistributed builds.
 
-## Build
+## Target validation
 
-Once the upstream Android project and integration patches are present:
+- Phone: OnePlus Ace 5 / ColorOS 16
+- Head unit: 2019 Honda Civic factory head unit
+- Link: factory USB wired Android Auto
 
-```bash
-./gradlew :aa-display:assembleDebug
-```
+## Remaining before a release APK
 
-Requires JDK 17 and Android SDK 36.
-
-## Device validation checklist
-
-- [ ] Shizuku binder connected / disconnected / permission denied states
-- [ ] Auto mode follows the head-unit negotiated profile
-- [ ] Custom width, height, and DPI persist across process restart
-- [ ] Resolution changes resize both virtual displays and their backing surfaces
-- [ ] Touch and pointer coordinates remain correct in both panes
-- [ ] Reconnect restores the selected effective profile
-- [ ] No `wm size` / `wm density` mutation of the phone's physical display
-- [ ] Validate on ColorOS 16 and a wired Android Auto head unit
+- Wire Shizuku state/permission UX and only invoke supported shell-identity operations.
+- Complete integration tests for resolution changes while connected, DPI changes, reconnects, and resize rollback.
+- Run physical-device validation for display geometry, touch mapping, stability, and frame pacing.
+- Build and inspect a minified release APK; publish only after validation.
 
 ## License
 
-See the upstream project's license and preserve its notices when integrating upstream source.
+See the upstream GPL-3.0 license and preserve all source notices.
