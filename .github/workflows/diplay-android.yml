@@ -38,9 +38,13 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Run parser unit tests
+        working-directory: DiPlay-APK-Modifier
+        run: gradle --no-daemon testDebugUnitTest
+
       - name: Build debug APK
         working-directory: DiPlay-APK-Modifier
-        run: gradle --no-daemon clean assembleDebug
+        run: gradle --no-daemon assembleDebug
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
