@@ -82,24 +82,29 @@ public final class ManifestAnalyzer {
                     String name = attr(e, "name");
                     out.append("- ").append(e.name).append(": ").append(name)
                             .append(" | exported=").append(defaultValue(attr(e, "exported"), "未显式声明"))
+                            .append(" | 判断=").append(exportedAssessment(e, manifest))
                             .append(" | enabled=").append(defaultValue(attr(e, "enabled"), "继承/默认"))
                             .append("\n");
+                    appendIntentFilters(out, e);
                     if (hasMainLauncher(e)) launchCandidates.add(name);
                 } else if ("service".equals(e.name)) {
                     services++;
                     out.append("- service: ").append(attr(e, "name"))
                             .append(" | exported=").append(defaultValue(attr(e, "exported"), "未显式声明"))
-                            .append("\n");
+                            .append(" | 判断=").append(exportedAssessment(e, manifest)).append("\n");
+                    appendIntentFilters(out, e);
                 } else if ("receiver".equals(e.name)) {
                     receivers++;
                     out.append("- receiver: ").append(attr(e, "name"))
                             .append(" | exported=").append(defaultValue(attr(e, "exported"), "未显式声明"))
-                            .append("\n");
+                            .append(" | 判断=").append(exportedAssessment(e, manifest)).append("\n");
+                    appendIntentFilters(out, e);
                 } else if ("provider".equals(e.name)) {
                     providers++;
                     out.append("- provider: ").append(attr(e, "name"))
                             .append(" | exported=").append(defaultValue(attr(e, "exported"), "未显式声明"))
-                            .append("\n");
+                            .append(" | 判断=").append(exportedAssessment(e, manifest)).append("\n");
+                    appendIntentFilters(out, e);
                 } else if ("meta-data".equals(e.name)) {
                     out.append("- application meta-data: ").append(attr(e, "name"))
                             .append(" = ").append(defaultValue(attr(e, "value"), attr(e, "resource")))
@@ -164,6 +169,51 @@ public final class ManifestAnalyzer {
         out.append("重新打包/签名会改变 APK 身份；可能导致覆盖安装失败、数据无法迁移或应用完整性校验失败。\n");
         out.append("只有 Android Auto 官方支持的应用类别、合规实现及实际接收端测试通过，才能确认投射能力。\n");
         return out.toString();
+    }
+
+    private static String exportedAssessment(BinaryXmlManifestParser.Element component,
+                                             BinaryXmlManifestParser.Element manifest) {
+        String declared = attr(component, "exported");
+        if ("true".equalsIgnoreCase(declared)) return "显式导出";
+        if ("false".equalsIgnoreCase(declared)) return "显式不导出";
+        boolean hasFilter = false;
+        for (BinaryXmlManifestParser.Element child : component.children)
+            if ("intent-filter".equals(child.name)) hasFilter = true;
+        int target = 1;
+        try { target = Integer.parseInt(attr(docSdk(manifest), "targetSdkVersion")); }
+        catch (Exception ignored) {}
+        if ("provider".equals(component.name))
+            return target <= 16 ? "未声明；旧版默认可能导出" : "未声明；默认不导出";
+        if (target >= 31 && hasFilter)
+            return "未声明且含 Intent Filter；targetSdk>=31 时通常无法通过安装校验";
+        if (hasFilter) return "未声明；旧版规则通常按导出处理";
+        return "未声明且无 Intent Filter；通常不导出";
+    }
+
+    private static BinaryXmlManifestParser.Element docSdk(BinaryXmlManifestParser.Element manifest) {
+        for (BinaryXmlManifestParser.Element child : manifest.children)
+            if ("uses-sdk".equals(child.name)) return child;
+        return null;
+    }
+
+    private static void appendIntentFilters(StringBuilder out,
+                                            BinaryXmlManifestParser.Element component) {
+        for (BinaryXmlManifestParser.Element filter : component.children) {
+            if (!"intent-filter".equals(filter.name)) continue;
+            out.append("    Intent Filter：\\n");
+            for (BinaryXmlManifestParser.Element item : filter.children) {
+                if ("action".equals(item.name))
+                    out.append("      action: ").append(attr(item, "name")).append("\\n");
+                else if ("category".equals(item.name))
+                    out.append("      category: ").append(attr(item, "name")).append("\\n");
+                else if ("data".equals(item.name)) {
+                    out.append("      data:");
+                    for (BinaryXmlManifestParser.Attribute a : item.attributes)
+                        out.append(" ").append(a.name).append("=").append(a.value);
+                    out.append("\\n");
+                }
+            }
+        }
     }
 
     private static boolean hasMainLauncher(BinaryXmlManifestParser.Element component) {
