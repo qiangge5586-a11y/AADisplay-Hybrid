@@ -16,12 +16,12 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class MainActivity extends Activity {
-    private static final int PICK_APK = 4101;
+    private static final int PICK_APK = 4101;\n    private static final int CREATE_REPORT = 4102;
     private LinearLayout root, logBox;
     private TextView status, selectedInfo;
     private String selectedPackage = "";
     private File selectedApkFile;
-    private String selectedSha256 = "";
+    private String selectedSha256 = "";\n    private String latestReport = "";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -152,7 +152,7 @@ public class MainActivity extends Activity {
                     selectedSha256 = "";
                     selectedInfo.setText("目标应用：" + pm.getApplicationLabel(info) +
                             "\n包名：" + info.packageName + "\n来源：手机已安装应用");
-                    log("选择已安装应用：" + info.packageName);
+                    log("选择已安装应用：" + info.packageName + "；APK 路径：" + info.sourceDir);
                 }).setNegativeButton("取消", null).show();
         log("扫描结束：找到 " + apps.size() + " 个可启动应用");
     }
@@ -258,6 +258,31 @@ public class MainActivity extends Activity {
                 log("读取应用信息失败：" + e.getMessage());
             }
         }
+    }
+
+    private void showReport(String report) {
+        TextView body = new TextView(this);
+        body.setText(report);
+        body.setTextIsSelectable(true);
+        body.setTextSize(12);
+        body.setPadding(dp(16), dp(12), dp(16), dp(12));
+        ScrollView view = new ScrollView(this);
+        view.addView(body);
+        new AlertDialog.Builder(this).setTitle("DiPlay 兼容性分析报告")
+                .setView(view).setPositiveButton("关闭", null)
+                .setNeutralButton("导出", (dialog, which) -> exportReport()).show();
+    }
+
+    private void exportReport() {
+        if (latestReport == null || latestReport.isEmpty()) {
+            toast("请先分析 APK，生成报告后再导出");
+            return;
+        }
+        Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TITLE, "DiPlay-analysis-report.txt");
+        startActivityForResult(intent, CREATE_REPORT);
     }
 
     private void checkPatchReadiness() {
