@@ -148,7 +148,7 @@ public class MainActivity extends Activity {
                 .setItems(labels, (dialog, which) -> {
                     ApplicationInfo info = apps.get(which);
                     selectedPackage = info.packageName;
-                    selectedApkFile = null;
+                    selectedApkFile = new File(info.sourceDir);
                     selectedSha256 = "";
                     selectedInfo.setText("目标应用：" + pm.getApplicationLabel(info) +
                             "\n包名：" + info.packageName + "\n来源：手机已安装应用");
@@ -166,7 +166,22 @@ public class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != PICK_APK || resultCode != RESULT_OK || data == null) return;
+        if (resultCode != RESULT_OK || data == null) return;
+        if (requestCode == CREATE_REPORT) {
+            Uri reportUri = data.getData();
+            if (reportUri == null) return;
+            try (OutputStream out = getContentResolver().openOutputStream(reportUri)) {
+                if (out == null) throw new IOException("无法创建报告文件");
+                out.write(latestReport.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                toast("报告已导出");
+                log("诊断报告已导出");
+            } catch (Exception e) {
+                toast("报告导出失败：" + e.getMessage());
+                log("报告导出失败：" + e.getMessage());
+            }
+            return;
+        }
+        if (requestCode != PICK_APK) return;
         Uri uri = data.getData();
         if (uri == null) return;
         try {
