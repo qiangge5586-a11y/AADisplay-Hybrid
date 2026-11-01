@@ -13,7 +13,8 @@
 - 运行诊断日志
 
 ## 尚未实现
-- 完整二进制 AndroidManifest.xml 解码与修改
+- 二进制 AndroidManifest.xml 只读解析器（首版已加入，仍需测试覆盖与接入界面）
+- 二进制 Manifest 修改与回写
 - APK 资源/DEX 重打包
 - v2/v3 APK 签名
 - 原签名与新签名差异检查
