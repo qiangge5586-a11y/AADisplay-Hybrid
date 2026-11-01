@@ -25,6 +25,7 @@ public final class BinaryXmlManifestParser {
     private static final int TYPE_INT_HEX = 0x11;
     private static final int TYPE_INT_BOOLEAN = 0x12;
     private static final int NO_INDEX = 0xffffffff;
+    private static final int MAX_XML_BYTES = 32 * 1024 * 1024;
 
     private BinaryXmlManifestParser() {}
 
@@ -33,18 +34,22 @@ public final class BinaryXmlManifestParser {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buffer = new byte[8192];
         int count;
-        while ((count = input.read(buffer)) != -1) out.write(buffer, 0, count);
+        while ((count = input.read(buffer)) != -1) {
+            if (out.size() > MAX_XML_BYTES - count) throw new IOException("AXML 超过 32 MiB 安全上限");
+            out.write(buffer, 0, count);
+        }
         return parse(out.toByteArray());
     }
 
     public static Document parse(byte[] data) throws IOException {
         if (data == null || data.length < 8) throw new IOException("AXML 文件过短");
+        if (data.length > MAX_XML_BYTES) throw new IOException("AXML 超过 32 MiB 安全上限");
         int rootType = u16(data, 0);
         int rootHeader = u16(data, 2);
         long declaredSize = u32(data, 4);
         if (rootType != RES_XML_TYPE) throw new IOException("不是 Android 二进制 XML");
-        if (rootHeader < 8 || declaredSize > data.length || declaredSize < rootHeader)
-            throw new IOException("AXML 根块长度无效");
+        if (rootHeader < 8 || declaredSize != data.length || declaredSize < rootHeader)
+            throw new IOException("AXML 根块长度无效或存在尾随数据");
 
         List<String> strings = new ArrayList<>();
         List<Element> roots = new ArrayList<>();
@@ -69,7 +74,13 @@ public final class BinaryXmlManifestParser {
                 else stack.get(stack.size() - 1).children.add(element);
                 stack.add(element);
             } else if (type == RES_XML_END_ELEMENT_TYPE) {
-                if (stack.isEmpty()) throw new IOException("AXML 元素结束标签不匹配");
+                if (headerSize < 16 || chunkSize < 24 || stack.isEmpty())
+                    throw new IOException("AXML 元素结束标签结构无效");
+                int ext = offset + headerSize;
+                int endName = index(u32(data, ext + 4), strings.size());
+                Element open = stack.get(stack.size() - 1);
+                if (endName < 0 || !open.name.equals(strings.get(endName)))
+                    throw new IOException("AXML 元素结束标签与开始标签不匹配");
                 stack.remove(stack.size() - 1);
             } else if (type == RES_XML_CDATA_TYPE) {
                 if (!stack.isEmpty() && offset + 28 <= end) {
