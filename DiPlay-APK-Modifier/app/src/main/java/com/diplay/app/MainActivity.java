@@ -236,7 +236,7 @@ public class MainActivity extends Activity {
                                 " | exported=" + activity.exported);
                     }
                 }
-                selectedInfo.setText("APK 分析完成\n包名：" + info.packageName +
+                latestReport = ManifestAnalyzer.analyze(selectedApkFile, pm);\n                log("二进制 Manifest 静态分析完成，报告长度：" + latestReport.length());\n                showReport(latestReport);\n                selectedInfo.setText("APK 分析完成\n包名：" + info.packageName +
                         "\n版本：" + info.versionName + "\nSHA-256：" + selectedSha256);
             } catch (Exception e) {
                 log("APK 分析异常：" + e.getClass().getSimpleName() + ": " + e.getMessage());
