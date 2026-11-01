@@ -200,17 +200,17 @@ public final class ManifestAnalyzer {
                                             BinaryXmlManifestParser.Element component) {
         for (BinaryXmlManifestParser.Element filter : component.children) {
             if (!"intent-filter".equals(filter.name)) continue;
-            out.append("    Intent Filter：\\n");
+            out.append("    Intent Filter：").append(System.lineSeparator());
             for (BinaryXmlManifestParser.Element item : filter.children) {
                 if ("action".equals(item.name))
-                    out.append("      action: ").append(attr(item, "name")).append("\\n");
+                    out.append("      action: ").append(attr(item, "name")).append(System.lineSeparator());
                 else if ("category".equals(item.name))
-                    out.append("      category: ").append(attr(item, "name")).append("\\n");
+                    out.append("      category: ").append(attr(item, "name")).append(System.lineSeparator());
                 else if ("data".equals(item.name)) {
                     out.append("      data:");
                     for (BinaryXmlManifestParser.Attribute a : item.attributes)
                         out.append(" ").append(a.name).append("=").append(a.value);
-                    out.append("\\n");
+                    out.append(System.lineSeparator());
                 }
             }
         }
