@@ -16,8 +16,6 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.iosbridge.transport.ConfigFsSafetyManager
 import com.iosbridge.transport.RootConfigFsSnapshot
-import com.iosbridge.transport.ConfigFsSafetyManager
-import com.iosbridge.transport.RootConfigFsSnapshot
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
