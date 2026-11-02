@@ -1,8 +1,8 @@
 # iOSBridge 0.2.8 — Rebuilt source baseline
 
-This directory is a freshly reconstructed Android project baseline. It is not a
-re-upload of the previous ZIP and does not yet contain the full USB/iAP2 research
-implementation from that archive.
+This is a reconstructed Android research project. It is being restored module by
+module; it is not yet a complete CarPlay sender and has not been validated on the
+target vehicle.
 
 ## Build
 
@@ -18,13 +18,20 @@ Run:
 gradle --no-daemon assembleDebug
 ```
 
-## Current scope
+## Restored modules currently present
 
-- Android app module and launcher activity.
-- Safe research UI only.
-- No USB gadget, ConfigFS, FunctionFS, Bluetooth identity, or network mutation.
-- No complete CarPlay sender, Apple authentication, or MFi certification claim.
+- Android app module and launcher activity (research shell).
+- ConfigFS gadget plan renderer; it only renders a reviewable plan and executes no commands.
+- FunctionFS descriptor-set builder, initializer, and transport scaffold.
+- iAP2 link packet codec and link-handshake state machine.
+- Read-only USB NCM capability inspector.
 
-The next commits must restore and review the individual capability-inspection,
-transaction journal, recovery, FunctionFS descriptor, and iAP2 research modules.
-A successful APK build does not prove CarPlay interoperability.
+## Important limitations
+
+- The FunctionFS transport scaffold is not a complete iAP2 or CarPlay transport.
+- No Apple authentication, MFi credentials, or certification is implemented or claimed.
+- ConfigFS plan output is not an instruction to execute blindly; it does not bind a UDC.
+- Root access does not guarantee that the device kernel exposes UDC, ConfigFS, FunctionFS, or NCM.
+- A successful APK build does not prove USB interoperability or compatibility with a vehicle head unit.
+
+Further work: restore the ConfigFS transaction journal, safety/recovery logic, full read-only root USB inspector, and then compile and resolve actual build errors.
