@@ -12,7 +12,8 @@ import java.nio.file.StandardCopyOption
 class ConfigFsRecoveryStore(private val directory: File) {
     data class CheckResult(val success: Boolean, val message: String, val diff: ConfigFsSnapshotDiff.Result? = null, val pendingReview: Boolean = false)
 
-    @Synchronized fun compareAndStore(current: ConfigFsSafetyManager.Snapshot): CheckResult {\n        return try {
+    @Synchronized fun compareAndStore(current: ConfigFsSafetyManager.Snapshot): CheckResult {
+        return try {
         if (!directory.exists() && !directory.mkdirs()) return CheckResult(false, "无法创建恢复记录目录")
         if (!directory.isDirectory) return CheckResult(false, "恢复记录路径不是目录")
         val baselineFile = File(directory, "last-snapshot.bin")
@@ -35,6 +36,7 @@ class ConfigFsRecoveryStore(private val directory: File) {
         atomicWrite(baselineFile, encode(current))
         CheckResult(true, if (diff.isIdentical) "与上次快照一致；基线已刷新。" else "检测到 USB 状态变化，已保存待人工审阅报告；未执行回滚。", diff, !diff.isIdentical)
     } catch (t: Throwable) { CheckResult(false, "恢复检查失败：${t.message ?: t.javaClass.simpleName}") }
+    }
 
     fun readPendingReview(): String? {
         val f = File(directory, "pending-review.txt")
