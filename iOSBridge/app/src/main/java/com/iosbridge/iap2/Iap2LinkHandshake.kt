@@ -15,7 +15,7 @@ class Iap2LinkHandshake(
 
     init {
         require(localInitialSequence in 0..255)
-        require(Iap2SyncPayloadCodec.decode(localSyncPayload).isSuccess) { "local SYN payload invalid" }
+        require(runCatching { Iap2SyncPayloadCodec.decode(localSyncPayload) }.isSuccess) { "local SYN payload invalid" }
     }
 
     @Synchronized fun start(): Iap2LinkPacketCodec.Packet {
@@ -79,7 +79,7 @@ class Iap2LinkHandshake(
     }
 
     private fun validatePeerSync(p: Iap2LinkPacketCodec.Packet) {
-        require(p.payload != null && Iap2SyncPayloadCodec.decode(p.payload).isSuccess) { "peer SYN payload malformed" }
+        require(p.payload != null && runCatching { Iap2SyncPayloadCodec.decode(p.payload) }.isSuccess) { "peer SYN payload malformed" }
     }
     private fun synAckPacket() = packet(Iap2LinkPacketCodec.CONTROL_SYN or Iap2LinkPacketCodec.CONTROL_ACK,
         localInitialSequence, peerNextSequence ?: error("peer sequence unavailable"), localSyncPayload)
