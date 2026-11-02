@@ -70,7 +70,7 @@ class RootConfigFsSnapshot(private val timeoutMs: Long = 8_000L) {
         private val SCRIPT = """
 set +e
 if grep -qw configfs /proc/mounts; then printf 'MOUNTED\t1\\n'; else printf 'MOUNTED\t0\\n'; fi
-R=''; for x in /sys/kernel/config/usb_gadget /config/usb_gadget; do if [ -d "$x" ]; then R="$x"; break; fi; done
+R=''; for x in /sys/kernel/config/usb_gadget /config/usb_gadget; do if [ -d "${'x" ]; then R="$x"; break; fi; done
 printf 'ROOT\t%s\\n' "${'$'}{R:--}"
 for x in /sys/class/udc/*; do [ -e "$x" ] && printf 'UDC\t%s\\n' "$(basename "$x")"; done
 ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "$x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
@@ -87,6 +87,386 @@ if [ -n "$R" ]; then
   [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
   for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
   for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }x" ]; then R="${'x"; break; fi; done
+printf 'ROOT\t%s\\n' "${'$'}{R:--}"
+for x in /sys/class/udc/*; do [ -e "$x" ] && printf 'UDC\t%s\\n' "$(basename "$x")"; done
+ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "$x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }x"; break; fi; done
+printf 'ROOT\t%s\\n' "${'${''}{R:--}"
+for x in /sys/class/udc/*; do [ -e "$x" ] && printf 'UDC\t%s\\n' "$(basename "$x")"; done
+ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "$x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }'}{R:--}"
+for x in /sys/class/udc/*; do [ -e "${'x" ] && printf 'UDC\t%s\\n' "$(basename "$x")"; done
+ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "$x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }x" ] && printf 'UDC\t%s\\n' "${'(basename "$x")"; done
+ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "$x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(basename "${'x")"; done
+ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "$x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }x")"; done
+ROLE=''; for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do if [ -r "${'x" ]; then ROLE="$(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }x" ]; then ROLE="${'(cat "$x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(cat "${'x" 2>/dev/null)"; [ -n "$ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }x" 2>/dev/null)"; [ -n "${'ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'$'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }ROLE" ] && break; fi; done
+printf 'ROLE\t%s\\n' "${'${''}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "$(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }'}{ROLE:--}"
+printf 'REQUESTED\t%s\\n' "${'(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "$(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(getprop sys.usb.config | tr '\\t\\n' '  ')"
+printf 'ACTIVE\t%s\\n' "${'(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "$R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(getprop sys.usb.state | tr '\\t\\n' '  ')"
+if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\\n'; else printf 'LEGACY\t0\\n'; fi
+if [ -n "${'R" ]; then
+ for g in "$R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }R" ]; then
+ for g in "${'R"/*; do
+  [ -d "$g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }R"/*; do
+  [ -d "${'g" ] || continue
+  N="$(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g" ] || continue
+  N="${'(basename "$g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(basename "${'g")"; printf 'GADGET\t%s\\n' "$N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g")"; printf 'GADGET\t%s\\n' "${'N"
+  [ -r "$g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }N"
+  [ -r "${'g/idVendor" ] && printf 'VID\t%s\t%s\\n' "$(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g/idVendor" ] && printf 'VID\t%s\t%s\\n' "${'(cat "$g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(cat "${'g/idVendor")" "$N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g/idVendor")" "${'N"
+  [ -r "$g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }N"
+  [ -r "${'g/idProduct" ] && printf 'PID\t%s\t%s\\n' "$(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g/idProduct" ] && printf 'PID\t%s\t%s\\n' "${'(cat "$g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(cat "${'g/idProduct")" "$N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g/idProduct")" "${'N"
+  [ -r "$g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }N"
+  [ -r "${'g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "$(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g/UDC" ] && printf 'BOUND\t%s\t%s\\n' "${'(cat "$g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(cat "${'g/UDC")" "$N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g/UDC")" "${'N"
+  for f in "$g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }N"
+  for f in "${'g"/functions/*; do [ -e "$f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g"/functions/*; do [ -e "${'f" ] && printf 'FUNCTION\t%s\t%s\\n' "$(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }f" ] && printf 'FUNCTION\t%s\t%s\\n' "${'(basename "$f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(basename "${'f")" "$N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }f")" "${'N"; done
+  for l in "$g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }N"; done
+  for l in "${'g"/configs/*/*; do [ -L "$l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }g"/configs/*/*; do [ -L "${'l" ] && printf 'LINK\t%s\t%s\t%s\\n' "$(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }l" ] && printf 'LINK\t%s\t%s\t%s\\n' "${'(basename "$l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }(basename "${'l")" "$(readlink "$l")" "$N"; done
+ done
+fi
+        }l")" "${'(readlink "$l")" "$N"; done
+ done
+fi
+        }(readlink "${'l")" "$N"; done
+ done
+fi
+        }l")" "${'N"; done
+ done
+fi
+        }N"; done
  done
 fi
         """.trimIndent()
