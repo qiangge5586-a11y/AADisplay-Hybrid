@@ -1,0 +1,53 @@
+name: Build iOSBridge 0.2.8
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "iOSBridge/iOSBridge-source-0.2.8.zip"
+      - ".github/workflows/iosbridge-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+
+      - name: Extract iOSBridge 0.2.8
+        run: |
+          test -s iOSBridge/iOSBridge-source-0.2.8.zip
+          mkdir -p /tmp/iosbridge
+          unzip -q iOSBridge/iOSBridge-source-0.2.8.zip -d /tmp/iosbridge
+          test -f /tmp/iosbridge/iOSBridge/settings.gradle.kts
+
+      - name: Build debug APK
+        working-directory: /tmp/iosbridge/iOSBridge
+        run: gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Verify APK
+        run: |
+          test -s /tmp/iosbridge/iOSBridge/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh /tmp/iosbridge/iOSBridge/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOSBridge-0.2.8-debug-apk
+          path: /tmp/iosbridge/iOSBridge/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
