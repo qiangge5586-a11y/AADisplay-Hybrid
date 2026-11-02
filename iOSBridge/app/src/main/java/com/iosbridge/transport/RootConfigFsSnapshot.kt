@@ -97,31 +97,31 @@ if grep -qw configfs /proc/mounts; then printf 'MOUNTED\t1\n'; else printf 'MOUN
 if [ -d /sys/kernel/config/usb_gadget ]; then ROOT=/sys/kernel/config/usb_gadget
 elif [ -d /config/usb_gadget ]; then ROOT=/config/usb_gadget
 fi
-if [ -n "$ROOT" ]; then printf 'ROOT\t%s\n' "$ROOT"; else printf 'ROOT\t-\n'; fi
+if [ -n "${'$'}ROOT" ]; then printf 'ROOT\t%s\n' "${'$'}ROOT"; else printf 'ROOT\t-\n'; fi
 for x in /sys/class/udc/*; do
-  [ -e "$x" ] && printf 'UDC\t%s\n' "$(basename "$x")"
+  [ -e "${'$'}x" ] && printf 'UDC\t%s\n' "${'$'}(basename "${'$'}x")"
 done
 for x in /sys/class/usb_role/*/role /sys/class/typec/*/data_role; do
-  if [ -r "$x" ]; then printf 'ROLE\t%s\n' "$(cat "$x" 2>/dev/null | tr -d '\r\n')"; break; fi
+  if [ -r "${'$'}x" ]; then printf 'ROLE\t%s\n' "${'$'}(cat "${'$'}x" 2>/dev/null | tr -d '\r\n')"; break; fi
 done
-printf 'REQUESTED\t%s\n' "$(getprop sys.usb.config 2>/dev/null)"
-printf 'ACTIVE\t%s\n' "$(getprop sys.usb.state 2>/dev/null)"
+printf 'REQUESTED\t%s\n' "${'$'}(getprop sys.usb.config 2>/dev/null)"
+printf 'ACTIVE\t%s\n' "${'$'}(getprop sys.usb.state 2>/dev/null)"
 if [ -e /sys/class/android_usb/android0 ] || [ -e /sys/class/android_usb ]; then printf 'LEGACY\t1\n'; else printf 'LEGACY\t0\n'; fi
-if [ -n "$ROOT" ]; then
-  for g in "$ROOT"/*; do
-    [ -d "$g" ] || continue
-    n="$(basename "$g")"
-    printf 'GADGET\t%s\n' "$n"
-    if [ -r "$g/idVendor" ]; then printf 'VID\t%s\t%s\n' "$n" "$(cat "$g/idVendor" 2>/dev/null | tr -d '\r\n')"; fi
-    if [ -r "$g/idProduct" ]; then printf 'PID\t%s\t%s\n' "$n" "$(cat "$g/idProduct" 2>/dev/null | tr -d '\r\n')"; fi
-    if [ -r "$g/UDC" ]; then printf 'BOUND\t%s\t%s\n' "$n" "$(cat "$g/UDC" 2>/dev/null | tr -d '\r\n')"; fi
-    for f in "$g"/functions/*; do
-      [ -e "$f" ] || continue
-      printf 'FUNCTION\t%s\t%s\n' "$n" "$(basename "$f")"
+if [ -n "${'$'}ROOT" ]; then
+  for g in "${'$'}ROOT"/*; do
+    [ -d "${'$'}g" ] || continue
+    n="${'$'}(basename "${'$'}g")"
+    printf 'GADGET\t%s\n' "${'$'}n"
+    if [ -r "${'$'}g/idVendor" ]; then printf 'VID\t%s\t%s\n' "${'$'}n" "${'$'}(cat "${'$'}g/idVendor" 2>/dev/null | tr -d '\r\n')"; fi
+    if [ -r "${'$'}g/idProduct" ]; then printf 'PID\t%s\t%s\n' "${'$'}n" "${'$'}(cat "${'$'}g/idProduct" 2>/dev/null | tr -d '\r\n')"; fi
+    if [ -r "${'$'}g/UDC" ]; then printf 'BOUND\t%s\t%s\n' "${'$'}n" "${'$'}(cat "${'$'}g/UDC" 2>/dev/null | tr -d '\r\n')"; fi
+    for f in "${'$'}g"/functions/*; do
+      [ -e "${'$'}f" ] || continue
+      printf 'FUNCTION\t%s\t%s\n' "${'$'}n" "${'$'}(basename "${'$'}f")"
     done
-    for l in "$g"/configs/*/*; do
-      [ -L "$l" ] || continue
-      printf 'LINK\t%s\t%s\t%s\n' "$n" "$(basename "$l")" "$(readlink "$l" 2>/dev/null)"
+    for l in "${'$'}g"/configs/*/*; do
+      [ -L "${'$'}l" ] || continue
+      printf 'LINK\t%s\t%s\t%s\n' "${'$'}n" "${'$'}(basename "${'$'}l")" "${'$'}(readlink "${'$'}l" 2>/dev/null)"
     done
   done
 fi
