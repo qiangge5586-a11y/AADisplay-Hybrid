@@ -10,7 +10,7 @@ import java.util.Base64
 class ConfigFsJournalStore(private val directory: File) {
     data class StoreResult(val success: Boolean, val message: String, val file: File? = null)
 
-    fun save(journal: ConfigFsTransaction.Journal): StoreResult = try {
+    fun save(journal: ConfigFsTransaction.Journal): StoreResult {\n        return try {
         if (!directory.exists() && !directory.mkdirs()) return StoreResult(false, "无法创建事务日志目录")
         if (!directory.isDirectory) return StoreResult(false, "事务日志路径不是目录")
         val target = File(directory, "${journal.transactionId}.ibj")
