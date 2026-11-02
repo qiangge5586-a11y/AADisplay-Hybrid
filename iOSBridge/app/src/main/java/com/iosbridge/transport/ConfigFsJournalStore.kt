@@ -10,7 +10,8 @@ import java.util.Base64
 class ConfigFsJournalStore(private val directory: File) {
     data class StoreResult(val success: Boolean, val message: String, val file: File? = null)
 
-    fun save(journal: ConfigFsTransaction.Journal): StoreResult {\n        return try {
+    fun save(journal: ConfigFsTransaction.Journal): StoreResult {
+        return try {
         if (!directory.exists() && !directory.mkdirs()) return StoreResult(false, "无法创建事务日志目录")
         if (!directory.isDirectory) return StoreResult(false, "事务日志路径不是目录")
         val target = File(directory, "${journal.transactionId}.ibj")
@@ -21,6 +22,7 @@ class ConfigFsJournalStore(private val directory: File) {
         catch (_: Exception) { Files.move(temp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
         StoreResult(true, "事务日志已原子保存", target)
     } catch (t: Throwable) { StoreResult(false, "保存事务日志失败：${t.message ?: t.javaClass.simpleName}") }
+    }
 
     fun load(transactionId: String): ConfigFsTransaction.Journal? {
         require(transactionId.matches(Regex("^[A-Za-z0-9_-]{1,48}$"))) { "Invalid transaction id" }
