@@ -12,7 +12,7 @@ import java.nio.file.StandardCopyOption
 class ConfigFsRecoveryStore(private val directory: File) {
     data class CheckResult(val success: Boolean, val message: String, val diff: ConfigFsSnapshotDiff.Result? = null, val pendingReview: Boolean = false)
 
-    @Synchronized fun compareAndStore(current: ConfigFsSafetyManager.Snapshot): CheckResult = try {
+    @Synchronized fun compareAndStore(current: ConfigFsSafetyManager.Snapshot): CheckResult {\n        return try {
         if (!directory.exists() && !directory.mkdirs()) return CheckResult(false, "无法创建恢复记录目录")
         if (!directory.isDirectory) return CheckResult(false, "恢复记录路径不是目录")
         val baselineFile = File(directory, "last-snapshot.bin")
