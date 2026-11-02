@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - "iOSBridge/iOSBridge-source-0.2.8.zip"
+      - "iOSBridge/**"
       - ".github/workflows/iosbridge-build.yml"
 
 permissions:
@@ -28,26 +28,26 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Extract iOSBridge 0.2.8
+      - name: Verify source tree
         run: |
-          test -s iOSBridge/iOSBridge-source-0.2.8.zip
-          mkdir -p /tmp/iosbridge
-          unzip -q iOSBridge/iOSBridge-source-0.2.8.zip -d /tmp/iosbridge
-          test -f /tmp/iosbridge/iOSBridge/settings.gradle.kts
+          test -f iOSBridge/settings.gradle.kts
+          test -f iOSBridge/app/build.gradle.kts
+          test -f iOSBridge/app/src/main/AndroidManifest.xml
+          test -f iOSBridge/app/src/main/java/com/iosbridge/MainActivity.kt
 
       - name: Build debug APK
-        working-directory: /tmp/iosbridge/iOSBridge
+        working-directory: iOSBridge
         run: gradle --no-daemon --stacktrace assembleDebug
 
       - name: Verify APK
         run: |
-          test -s /tmp/iosbridge/iOSBridge/app/build/outputs/apk/debug/app-debug.apk
-          ls -lh /tmp/iosbridge/iOSBridge/app/build/outputs/apk/debug/app-debug.apk
+          test -s iOSBridge/app/build/outputs/apk/debug/app-debug.apk
+          ls -lh iOSBridge/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: iOSBridge-0.2.8-debug-apk
-          path: /tmp/iosbridge/iOSBridge/app/build/outputs/apk/debug/app-debug.apk
+          path: iOSBridge/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
