@@ -16,6 +16,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.iosbridge.transport.ConfigFsSafetyManager
 import com.iosbridge.transport.RootConfigFsSnapshot
+import com.iosbridge.transport.ConfigFsSafetyManager
+import com.iosbridge.transport.RootConfigFsSnapshot
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,6 +31,7 @@ class MainActivity : Activity() {
     private lateinit var usbManager: UsbManager
     private lateinit var statusView: TextView
     private lateinit var logView: TextView
+    private lateinit var gadgetView: TextView
     private var receiverRegistered = false
 
     private val usbReceiver = object : BroadcastReceiver() {
@@ -71,6 +74,17 @@ class MainActivity : Activity() {
             text = "Root USB Gadget 只读诊断"
             setOnClickListener { runRootUsbDiagnostic(this) }
         })
+        root.addView(Button(this).apply {
+            text = "读取手机 USB Gadget 状态（Root，只读）"
+            setOnClickListener { inspectUsbGadget() }
+        })
+        gadgetView = TextView(this).apply {
+            textSize = 13f
+            setTextIsSelectable(true)
+            text = "手机 USB Gadget：尚未采集。此操作只读取系统状态，不修改 USB 配置。"
+            setPadding(0, 10, 0, 10)
+        }
+        root.addView(gadgetView)
         root.addView(Button(this).apply {
             text = "运行模拟握手测试"
             setOnClickListener { runSimulatedHandshake() }
@@ -151,6 +165,24 @@ class MainActivity : Activity() {
                 appendLog(if (result.success) "Root USB 只读诊断完成。" else "Root USB 只读诊断未完成：" + result.message)
                 button.isEnabled = true
                 button.text = "Root USB Gadget 只读诊断"
+            }
+        }.apply { isDaemon = true; start() }
+    }
+
+    private fun inspectUsbGadget() {
+        gadgetView.text = "正在请求 Root 并读取 USB Gadget 状态……"
+        appendLog("开始 Root USB Gadget 只读采集")
+        Thread {
+            val result = RootConfigFsSnapshot().capture()
+            val rendered = if (result.success && result.snapshot != null) {
+                ConfigFsSafetyManager.assess(result.snapshot).render() +
+                    "\n\n原始只读采集：\n" + result.rawOutput.take(6_000)
+            } else {
+                "USB Gadget 只读采集失败：${result.message}\n\n未执行任何 USB 写操作。"
+            }
+            runOnUiThread {
+                gadgetView.text = rendered
+                appendLog(if (result.success) "USB Gadget 只读采集完成" else "USB Gadget 只读采集失败：${result.message}")
             }
         }.apply { isDaemon = true; start() }
     }
