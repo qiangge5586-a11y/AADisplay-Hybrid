@@ -14,6 +14,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.iosbridge.transport.ConfigFsSafetyManager
+import com.iosbridge.transport.RootConfigFsSnapshot
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -64,6 +66,10 @@ class MainActivity : Activity() {
         root.addView(Button(this).apply {
             text = "刷新 USB 状态"
             setOnClickListener { refreshUsbStatus() }
+        })
+        root.addView(Button(this).apply {
+            text = "Root USB Gadget 只读诊断"
+            setOnClickListener { runRootUsbDiagnostic(this) }
         })
         root.addView(Button(this).apply {
             text = "运行模拟握手测试"
@@ -127,6 +133,26 @@ class MainActivity : Activity() {
         }
         statusView.text = text
         appendLog("USB 刷新：发现 ${devices.size} 个 Host 设备")
+    }
+
+    private fun runRootUsbDiagnostic(button: Button) {
+        button.isEnabled = false
+        button.text = "正在进行只读诊断…"
+        appendLog("开始 Root USB Gadget 只读诊断；不会修改 USB 配置。")
+        Thread {
+            val result = RootConfigFsSnapshot().capture()
+            val rendered = if (result.success && result.snapshot != null) {
+                ConfigFsSafetyManager.assess(result.snapshot).render()
+            } else {
+                result.message + if (result.rawOutput.isNotBlank()) "\\n" + result.rawOutput else ""
+            }
+            runOnUiThread {
+                statusView.text = rendered
+                appendLog(if (result.success) "Root USB 只读诊断完成。" else "Root USB 只读诊断未完成：" + result.message)
+                button.isEnabled = true
+                button.text = "Root USB Gadget 只读诊断"
+            }
+        }.apply { isDaemon = true; start() }
     }
 
     private fun runSimulatedHandshake() {
