@@ -6,7 +6,7 @@
     <application
         android:allowBackup="false"
         android:label="DiAuto Civic USB"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@android:style/Theme.Holo.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden"
