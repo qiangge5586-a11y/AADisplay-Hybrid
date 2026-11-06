@@ -9,6 +9,7 @@ import android.content.IntentFilter;
 import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbManager;
 import android.os.Bundle;
+import android.os.Handler;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -19,20 +20,39 @@ import com.qiangge.diautocivic.usb.AoaProtocol;
 import com.qiangge.diautocivic.usb.UsbBulkTransport;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
- * Deliberately small API-17 USB diagnostic shell.
- * It verifies AOA switching and bulk endpoint opening only; it is not yet an AAP receiver.
+ * Minimal API-17 USB diagnostic shell.
+ * It verifies AOA switching and bulk endpoint opening; it is not yet an AAP receiver.
  */
 public final class MainActivity extends Activity {
     private static final String ACTION_USB_PERMISSION =
             "com.qiangge.diautocivic.action.USB_PERMISSION";
+    private static final long REENUMERATION_TIMEOUT_MS = 15000L;
 
+    private final Handler mainHandler = new Handler();
     private UsbManager usbManager;
     private LinearLayout deviceList;
     private TextView status;
     private UsbBulkTransport activeTransport;
+    private String activeDeviceName;
+    private String permissionDeviceName;
+    private boolean permissionRequestPending;
+    private boolean switchingToAoa;
+    private boolean waitingForAccessory;
+    private boolean openingAccessory;
+
+    private final Runnable reenumerationTimeout = new Runnable() {
+        @Override
+        public void run() {
+            if (waitingForAccessory && activeTransport == null) {
+                waitingForAccessory = false;
+                setStatus("AOA request timed out: no accessory-mode re-enumeration was observed.");
+            }
+        }
+    };
 
     private final BroadcastReceiver usbEvents = new BroadcastReceiver() {
         @Override
@@ -41,20 +61,33 @@ public final class MainActivity extends Activity {
             if (ACTION_USB_PERMISSION.equals(action)) {
                 UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 boolean granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false);
+                permissionRequestPending = false;
+                permissionDeviceName = null;
                 if (granted && device != null) {
+                    if (isAccessoryMode(device)) {
+                        waitingForAccessory = false;
+                        mainHandler.removeCallbacks(reenumerationTimeout);
+                    }
                     handleDevice(device);
                 } else {
                     setStatus("USB permission denied");
                 }
             } else if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
                 scanDevices();
+                autoConnectFromScan();
             } else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                 UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-                if (device != null && activeTransport != null) {
+                if (device != null && activeTransport != null &&
+                        device.getDeviceName().equals(activeDeviceName)) {
                     activeTransport.close();
                     activeTransport = null;
+                    activeDeviceName = null;
+                    openingAccessory = false;
                 }
                 scanDevices();
+                if (waitingForAccessory) {
+                    setStatus("Phone disconnected for AOA switch; waiting for accessory-mode re-enumeration...");
+                }
             }
         }
     };
@@ -75,7 +108,10 @@ public final class MainActivity extends Activity {
         Button scan = new Button(this);
         scan.setText("Scan USB devices");
         scan.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { scanDevices(); }
+            @Override public void onClick(View view) {
+                scanDevices();
+                autoConnectFromScan();
+            }
         });
         root.addView(scan);
 
@@ -94,21 +130,25 @@ public final class MainActivity extends Activity {
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         registerReceiver(usbEvents, filter);
+
         scanDevices();
+        autoConnectFromScan();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         scanDevices();
+        autoConnectFromScan();
     }
 
     @Override
     protected void onDestroy() {
+        mainHandler.removeCallbacks(reenumerationTimeout);
         try {
             unregisterReceiver(usbEvents);
         } catch (IllegalArgumentException ignored) {
-            // Receiver was already unregistered by the framework during teardown.
+            // Receiver was already unregistered during teardown.
         }
         if (activeTransport != null) {
             activeTransport.close();
@@ -139,14 +179,85 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Automatically handles a single Android candidate. Ambiguous multi-device cases
+     * remain manual so an unrelated USB peripheral is never switched by guesswork.
+     */
+    private void autoConnectFromScan() {
+        if (switchingToAoa || openingAccessory || permissionRequestPending || activeTransport != null) {
+            return;
+        }
+
+        Map<String, UsbDevice> devices = usbManager.getDeviceList();
+        if (devices == null || devices.isEmpty()) {
+            return;
+        }
+
+        List<UsbDevice> accessories = new ArrayList<UsbDevice>();
+        List<UsbDevice> normalAndroidDevices = new ArrayList<UsbDevice>();
+        for (UsbDevice device : devices.values()) {
+            if (isAccessoryMode(device)) {
+                accessories.add(device);
+            } else if (isAndroidCandidate(device)) {
+                normalAndroidDevices.add(device);
+            }
+        }
+
+        if (accessories.size() == 1) {
+            waitingForAccessory = false;
+            mainHandler.removeCallbacks(reenumerationTimeout);
+            selectDevice(accessories.get(0));
+            return;
+        }
+        if (accessories.size() > 1) {
+            setStatus("Multiple AOA accessories found. Select the intended device below.");
+            return;
+        }
+        if (waitingForAccessory) {
+            return;
+        }
+        if (normalAndroidDevices.size() == 1) {
+            selectDevice(normalAndroidDevices.get(0));
+        } else if (normalAndroidDevices.size() > 1) {
+            setStatus("Multiple Android USB candidates found. Select the intended phone below.");
+        }
+    }
+
+    private static boolean isAndroidCandidate(UsbDevice device) {
+        if (isAccessoryMode(device) || device.getVendorId() == 0x18D1) {
+            return true;
+        }
+        for (int i = 0; i < device.getInterfaceCount(); i++) {
+            android.hardware.usb.UsbInterface usbInterface = device.getInterface(i);
+            int deviceClass = usbInterface.getInterfaceClass();
+            int subclass = usbInterface.getInterfaceSubclass();
+            int protocol = usbInterface.getInterfaceProtocol();
+
+            // Android ADB, RNDIS, vendor-specific AOAP, and PTP interface patterns.
+            if ((deviceClass == 0xFF && subclass == 0x42 && protocol == 0x01) ||
+                (deviceClass == 0xE0 && subclass == 0x01 && protocol == 0x03) ||
+                (deviceClass == 0xFF && subclass == 0xFF && protocol == 0x00) ||
+                (deviceClass == 0x06 && subclass == 0x01 && protocol == 0x01)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void selectDevice(UsbDevice device) {
         if (!usbManager.hasPermission(device)) {
+            String name = device.getDeviceName();
+            if (permissionRequestPending && name.equals(permissionDeviceName)) {
+                return;
+            }
+            permissionDeviceName = name;
+            permissionRequestPending = true;
             Intent permission = new Intent(ACTION_USB_PERMISSION);
             permission.setPackage(getPackageName());
             PendingIntent pendingIntent = PendingIntent.getBroadcast(
                     this, 0, permission, PendingIntent.FLAG_UPDATE_CURRENT);
             usbManager.requestPermission(device, pendingIntent);
-            setStatus("Requested USB permission for " + device.getDeviceName());
+            setStatus("Requested USB permission for " + name);
             return;
         }
         handleDevice(device);
@@ -154,17 +265,25 @@ public final class MainActivity extends Activity {
 
     private void handleDevice(final UsbDevice device) {
         if (isAccessoryMode(device)) {
+            if (openingAccessory || activeTransport != null) {
+                return;
+            }
+            openingAccessory = true;
             setStatus("AOA device detected; opening bulk interface...");
             new Thread(new Runnable() {
                 @Override public void run() {
                     final UsbBulkTransport transport = UsbBulkTransport.open(usbManager, device);
                     runOnUiThread(new Runnable() {
                         @Override public void run() {
+                            openingAccessory = false;
                             if (transport == null) {
                                 setStatus("No usable bulk IN/OUT interface, or USB open/claim failed.");
                             } else {
                                 if (activeTransport != null) activeTransport.close();
                                 activeTransport = transport;
+                                activeDeviceName = device.getDeviceName();
+                                waitingForAccessory = false;
+                                mainHandler.removeCallbacks(reenumerationTimeout);
                                 setStatus("USB bulk interface opened. AAP session layer is not yet connected.");
                             }
                         }
@@ -174,14 +293,26 @@ public final class MainActivity extends Activity {
             return;
         }
 
+        if (switchingToAoa) {
+            return;
+        }
+        switchingToAoa = true;
         setStatus("Sending AOA identity strings...");
         new Thread(new Runnable() {
             @Override public void run() {
                 final AoaProtocol.SwitchResult result = openForAoa(device);
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
-                        setStatus("AOA result: " + result +
-                                ". Scan again after the phone re-enumerates; this result alone is not connection success.");
+                        switchingToAoa = false;
+                        if (result == AoaProtocol.SwitchResult.START_ACKNOWLEDGED ||
+                                result == AoaProtocol.SwitchResult.START_DISCONNECT_OR_ERROR) {
+                            waitingForAccessory = true;
+                            mainHandler.removeCallbacks(reenumerationTimeout);
+                            mainHandler.postDelayed(reenumerationTimeout, REENUMERATION_TIMEOUT_MS);
+                            setStatus("AOA START requested. Waiting up to 15 seconds for accessory-mode re-enumeration...");
+                        } else {
+                            setStatus("AOA failed: " + result);
+                        }
                     }
                 });
             }
@@ -220,5 +351,4 @@ public final class MainActivity extends Activity {
     private void setStatus(String message) {
         if (status != null) status.setText(message);
     }
-
 }
