@@ -310,6 +310,10 @@ public final class MainActivity extends Activity {
                             mainHandler.removeCallbacks(reenumerationTimeout);
                             mainHandler.postDelayed(reenumerationTimeout, REENUMERATION_TIMEOUT_MS);
                             setStatus("AOA START requested. Waiting up to 15 seconds for accessory-mode re-enumeration...");
+                            // The phone may have re-enumerated before the USB attach broadcast
+                            // was delivered to this Activity. Re-scan immediately to close that race.
+                            scanDevices();
+                            autoConnectFromScan();
                         } else {
                             setStatus("AOA failed: " + result);
                         }
