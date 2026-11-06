@@ -317,3 +317,40 @@ Evidence references (upstream main snapshot):
 - FfmpegHevcDecoder.kt: 863de1bc7aaedc9274eecaf4d238cb3873a47aa1
 
 Static source audit only. No USB phone, Honda head unit, API-17 runtime or APK build was available for validation.
+## AOA string framing and USB reconnect audit (2026-11-06)
+
+### Confirmed AOA SEND_STRING framing defect
+
+Upstream UsbAccessoryMode.initStringControlTransfer() sends string.toByteArray() with wLength=string.length. Android Open Accessory reference implementations send strlen(string)+1 (including the trailing NUL terminator). The Android Open Accessory Display Sink reference implementation and multiple independent AOA host implementations agree on the +1 length.
+
+This is a concrete protocol-level defect in the current standard Java AOA switch path. It is separate from the reported app-install/startup crash, but it can prevent the phone from accepting the AOA identity strings and switching into accessory mode.
+
+Civic correction:
+- Encode explicitly as US-ASCII (the six identity strings are ASCII), append one 0x00 byte, and pass the resulting byte array length as wLength.
+- Validate the controlTransfer result against the expected payload length; do not accept an arbitrary non-negative result as a successful complete string transfer.
+- Send all six strings in protocol order and abort before ACCESSORY_START if any transfer is incomplete.
+- Add a pure unit test for each payload: byte sequence ends in exactly one NUL; wLength equals byteArray.size; no platform USB object is needed by the test.
+
+### USB connection state and retry behavior
+
+- AapService.checkAlreadyConnectedUsb() checks currently enumerated devices, requests permission for the re-enumerated AOA device, and only then calls connectUsbWithRetry(). This is the correct broad lifecycle ordering: the post-switch device is a new USB enumeration and needs its own permission grant.
+- onUsbPermission() distinguishes normal-mode devices (perform AOA switch) from accessory-mode devices (connect the bulk transport). Preserve this distinction in Civic.
+- connectUsbWithRetry() calls CommManager.connect(device) up to four times because its loop condition is retryCount <= maxRetries with maxRetries=3. The retry log says attempt n/3, so the displayed denominator is off by one; make attempts and logs consistent.
+- UsbAccessoryMode currently returns true after sending ACCESSORY_START and sleeping 500 ms. That only means the transition request was issued; it does not prove the device re-enumerated. The Civic flow should wait for the matching accessory-mode attach event with a deadline, then request permission and open the data transport.
+- checkAlreadyConnectedUsb() contains policy branches for last-session, single-device and auto-start behavior. The Civic USB-only build should simplify this to one deterministic USB attach/permission/AOA/re-enumeration/connect state machine, rather than carrying the entire multi-mode auto-connect policy.
+
+### Bulk endpoint validation
+
+UsbAccessoryConnection.initEndpoint() currently chooses the first endpoint whose direction is IN and the first endpoint in the other direction. It does not check UsbEndpoint.getType() == USB_ENDPOINT_XFER_BULK. The USB data interface must be validated as bulk IN + bulk OUT before the connection is accepted.
+
+Also correct disconnect cleanup ordering: release the claimed interface while the UsbDeviceConnection is still open, then close it. The current implementation closes first and then attempts releaseInterface(), which can fail. Keep cleanup idempotent and tolerate detach races.
+
+### AOA evidence references
+
+- DiAuto UsbAccessoryMode.kt: eeeb2f7ff08adfd033c95483b43e9e615f943ad0
+- DiAuto UsbAccessoryConnection.kt: af778eb1a743d7393db93187b7974c1579b7d044
+- Android Open Accessory Display Sink reference: https://github.com/binbin594738977/AndroidFramework-SourceCode/blob/ff78ded623b13cbf9a47abb1d8cae6646fff9ee8/android23/src/com/android/accessorydisplay/sink/SinkActivity.java
+- Independent AOA host reference (AndroidAccessory.cpp): https://github.com/aoabook/Arduino/blob/e087d73cf2ce6bd667643704854e83e5d7949c7c/libraries/UsbHost/AndroidAccessory.cpp
+- Independent AOA implementation: https://github.com/RT-Thread/rt-thread/blob/7395c5d7f08611390033b6e7fc683e827ea198ea/components/drivers/usb/cherryusb/class/aoa/usbh_aoa.c
+
+These references support the required NUL-terminated SEND_STRING framing. They do not constitute a test against the user's phone or Civic head unit.
