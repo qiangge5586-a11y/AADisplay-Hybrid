@@ -20,7 +20,7 @@ public final class AapRawMessageDecoder {
         public final int type;
         public final byte[] payload;
 
-        private Message(int channel, int flags, int type, byte[] payload) {
+        Message(int channel, int flags, int type, byte[] payload) {
             this.channel = channel;
             this.flags = flags;
             this.type = type;
