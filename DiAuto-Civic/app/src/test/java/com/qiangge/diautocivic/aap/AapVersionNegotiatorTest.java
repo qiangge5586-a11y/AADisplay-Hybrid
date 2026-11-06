@@ -6,7 +6,7 @@ import static org.junit.Assert.*;
 public class AapVersionNegotiatorTest {
     @Test public void requestMatchesUpstreamWireBytes() {
         AapVersionNegotiator n = new AapVersionNegotiator();
-        assertArrayEquals(new byte[] {0,3,0,4,0,1,0,1,0,2}, n.createRequest());
+        assertArrayEquals(new byte[] {0,3,0,6,0,1,0,1,0,2}, n.createRequest());
         assertEquals(AapVersionNegotiator.State.WAITING_FOR_RESPONSE, n.getState());
     }
 
