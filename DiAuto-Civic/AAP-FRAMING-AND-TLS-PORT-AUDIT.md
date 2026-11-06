@@ -77,3 +77,14 @@ The version exchange is now wired end-to-end in source from the Activity to USB 
 7. Keep all wireless discovery, Wi-Fi credential exchange and Bluetooth RFCOMM handoff out of this USB-only build.
 
 No physical Civic test has been performed. A successful unit test or CI build is not proof that the phone switches to AOA, that the head unit USB port is a host, or that the AAP/TLS session works on the car.
+
+## TLS handshake module port (2026-11-07)
+
+- Added `AapTlsHandshake.java`, a transport-neutral Java implementation that accepts an injected `SSLContext`; it does not bundle a certificate, private key, Conscrypt provider, or trust-all manager.
+- The worker drives client-mode `SSLEngine` through `NEED_WRAP`, `NEED_UNWRAP`, and `NEED_TASK`, with a 15-second overall deadline and cooperative thread interruption.
+- Outbound TLS records are wrapped as raw AAP channel 0 / flags 3 / type 3 messages. Inbound data is incrementally decoded as raw AAP messages; only non-empty channel 0 / type 3 payloads are delivered to the TLS engine. Other control messages are ignored.
+- TLS underflow preserves only the unconsumed network bytes before appending the next TLS payload. This is important when a USB bulk read splits a TLS record.
+- On TLS completion, the module sends the upstream Status-OK message (channel 0 / flags 3 / type 4 / payload `08 00`).
+- Added boundary/wire-format unit tests for null/disconnected inputs, TLS type-3 framing and Status-OK framing.
+
+**Not yet wired into MainActivity:** the version-exchange success callback still reports that TLS is the next stage. A caller must supply a vetted `SSLContext`; provider selection, client certificate/key provenance and peer trust policy remain open. The module does not yet establish the encrypted AAP message pump. Passing its unit tests is not evidence of a successful phone TLS handshake.
