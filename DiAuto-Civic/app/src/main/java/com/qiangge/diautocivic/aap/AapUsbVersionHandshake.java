@@ -20,7 +20,8 @@ public final class AapUsbVersionHandshake {
         SUCCESS,
         PEER_TIMEOUT,
         TRANSPORT_ERROR,
-        INVALID_TRANSPORT
+        INVALID_TRANSPORT,
+        CANCELLED
     }
 
     private static final int ATTEMPTS = 3;
@@ -42,6 +43,7 @@ public final class AapUsbVersionHandshake {
 
         byte[] buffer = new byte[READ_BUFFER_SIZE];
         for (int attempt = 0; attempt < ATTEMPTS; attempt++) {
+            if (Thread.currentThread().isInterrupted()) return Result.CANCELLED;
             if (!transport.isConnected()) {
                 negotiator.fail();
                 return Result.TRANSPORT_ERROR;
@@ -54,6 +56,7 @@ public final class AapUsbVersionHandshake {
 
             long deadline = System.currentTimeMillis() + ATTEMPT_TIMEOUT_MS;
             while (transport.isConnected()) {
+                if (Thread.currentThread().isInterrupted()) return Result.CANCELLED;
                 long remaining = deadline - System.currentTimeMillis();
                 if (remaining <= 0) break;
 
@@ -83,6 +86,7 @@ public final class AapUsbVersionHandshake {
         int offset = 0;
         long deadline = System.currentTimeMillis() + ATTEMPT_TIMEOUT_MS;
         while (offset < data.length && transport.isConnected()) {
+            if (Thread.currentThread().isInterrupted()) return false;
             long remaining = deadline - System.currentTimeMillis();
             if (remaining <= 0) return false;
             int written = transport.write(data, offset, data.length - offset,
