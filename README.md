@@ -52,3 +52,7 @@ The separate read-only diagnostic app under [usb-probe](usb-probe/) is retained 
 ## License
 
 See the upstream GPL-3.0 license and preserve all source notices.
+
+## Honda Civic DiAuto adaptation
+
+The isolated Android Auto receiver compatibility workstream for the 2019 Honda Civic factory head unit (Android 4.2.2 / API 17 / ARMv7) lives in [DiAuto-Civic](DiAuto-Civic/README.md). It is separate from the legacy virtual-display integration and the wireless CarPlay sender. The directory currently contains the scope and compatibility plan; no API-17 port or vehicle-tested APK is claimed yet.
