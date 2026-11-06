@@ -354,3 +354,25 @@ Also correct disconnect cleanup ordering: release the claimed interface while th
 - Independent AOA implementation: https://github.com/RT-Thread/rt-thread/blob/7395c5d7f08611390033b6e7fc683e827ea198ea/components/drivers/usb/cherryusb/class/aoa/usbh_aoa.c
 
 These references support the required NUL-terminated SEND_STRING framing. They do not constitute a test against the user's phone or Civic head unit.
+## First USB-only source milestone and CI validation (2026-11-06)
+
+A standalone minimal Android application has now been added under DiAuto-Civic/app. This is intentionally a diagnostic shell and not yet a complete Android Auto receiver.
+
+Implemented source:
+- app/src/main/java/com/qiangge/diautocivic/usb/AoaProtocol.java: API-17 Android USB Host AOA negotiation; ASCII validation; NUL-terminated identity strings; exact SEND_STRING transfer-length checks; distinct START acknowledgement vs disconnect/error result; USB runtime exceptions contained.
+- app/src/main/java/com/qiangge/diautocivic/usb/UsbBulkTransport.java: scans interfaces for both BULK IN and BULK OUT endpoints, claims only a suitable interface, tolerates detach/open races and releases the interface before closing the connection.
+- app/src/main/java/com/qiangge/diautocivic/MainActivity.java: manual device enumeration, USB permission request, AOA negotiation, re-enumeration rescan and bulk-interface opening.
+- app/src/test/java/com/qiangge/diautocivic/usb/AoaProtocolTest.java: unit tests for exact NUL framing, empty strings, non-ASCII rejection, embedded NUL rejection and request slot constants.
+- app/build.gradle.kts: standalone API-17 application configuration, compileSdk 35, targetSdk 28, no AndroidX/Kotlin/Nearby/Conscrypt dependencies.
+- .github/workflows/diauto-civic-build.yml: CI unit-test and debug-APK build workflow.
+
+CI history:
+- Early workflow attempts failed during Gradle script configuration because an invalid unitTests.returnDefaultValues DSL property was added. That property has been removed.
+- Workflow run 42231768276, commit 63b481cbd5946d96ff0b71c22ade343b6e60a466, completed successfully: AOA protocol unit tests passed, debug APK assembled, and artifact diauto-civic-usb-debug uploaded. This run predates the final API-17 theme correction and its APK must not be treated as the current API-17 candidate.
+- The manifest theme was then changed from Theme.Material.Light.NoActionBar (API 21+) to Theme.Holo.Light.NoActionBar (available before API 17). A new workflow run 42231949204 was started for that corrected manifest; its result must be checked before treating the latest tree as CI-verified.
+
+Scope limitations:
+- MainActivity currently requires the user to select the USB device and rescan after AOA re-enumeration; a bounded automatic attach/permission/re-enumeration state machine remains to be implemented.
+- No AAP TLS/session handshake, media/control channels, audio, video projection or touch pipeline has been ported yet.
+- No physical USB phone or Civic head-unit test has been performed. CI build success proves source compilation/unit tests only, not API-17 runtime or hardware compatibility.
+- The initial diagnostic APK is not a usable Android Auto receiver and should not be described as the final installable product.
