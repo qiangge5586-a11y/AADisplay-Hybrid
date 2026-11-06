@@ -19,7 +19,6 @@ import com.qiangge.diautocivic.usb.AoaProtocol;
 import com.qiangge.diautocivic.usb.UsbBulkTransport;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -33,9 +32,7 @@ public final class MainActivity extends Activity {
     private UsbManager usbManager;
     private LinearLayout deviceList;
     private TextView status;
-    private UsbDevice pendingDevice;
     private UsbBulkTransport activeTransport;
-    private boolean receiverRegistered;
 
     private final BroadcastReceiver usbEvents = new BroadcastReceiver() {
         @Override
@@ -90,33 +87,29 @@ public final class MainActivity extends Activity {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1));
 
         setContentView(root);
+
+        // Keep permission/attach callbacks registered while the permission dialog pauses
+        // or resumes this Activity.
+        IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        registerReceiver(usbEvents, filter);
         scanDevices();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (!receiverRegistered) {
-            IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
-            filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
-            filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-            registerReceiver(usbEvents, filter);
-            receiverRegistered = true;
-        }
         scanDevices();
     }
 
     @Override
-    protected void onPause() {
-        if (receiverRegistered) {
-            unregisterReceiver(usbEvents);
-            receiverRegistered = false;
-        }
-        super.onPause();
-    }
-
-    @Override
     protected void onDestroy() {
+        try {
+            unregisterReceiver(usbEvents);
+        } catch (IllegalArgumentException ignored) {
+            // Receiver was already unregistered by the framework during teardown.
+        }
         if (activeTransport != null) {
             activeTransport.close();
             activeTransport = null;
@@ -148,7 +141,6 @@ public final class MainActivity extends Activity {
 
     private void selectDevice(UsbDevice device) {
         if (!usbManager.hasPermission(device)) {
-            pendingDevice = device;
             Intent permission = new Intent(ACTION_USB_PERMISSION);
             permission.setPackage(getPackageName());
             PendingIntent pendingIntent = PendingIntent.getBroadcast(
@@ -185,8 +177,7 @@ public final class MainActivity extends Activity {
         setStatus("Sending AOA identity strings...");
         new Thread(new Runnable() {
             @Override public void run() {
-                UsbDeviceConnectionHolder holder = openForAoa(device);
-                final AoaProtocol.SwitchResult result = holder.result;
+                final AoaProtocol.SwitchResult result = openForAoa(device);
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
                         setStatus("AOA result: " + result +
@@ -197,13 +188,14 @@ public final class MainActivity extends Activity {
         }, "civic-aoa-switch").start();
     }
 
-    private UsbDeviceConnectionHolder openForAoa(UsbDevice device) {
-        android.hardware.usb.UsbDeviceConnection connection = usbManager.openDevice(device);
-        if (connection == null) {
-            return new UsbDeviceConnectionHolder(AoaProtocol.SwitchResult.PROTOCOL_UNSUPPORTED);
-        }
+    private AoaProtocol.SwitchResult openForAoa(UsbDevice device) {
+        android.hardware.usb.UsbDeviceConnection connection = null;
         try {
-            AoaProtocol.SwitchResult result = AoaProtocol.switchToAccessory(
+            connection = usbManager.openDevice(device);
+            if (connection == null) {
+                return AoaProtocol.SwitchResult.USB_IO_ERROR;
+            }
+            return AoaProtocol.switchToAccessory(
                     connection,
                     "Android",
                     "Android Auto",
@@ -211,9 +203,12 @@ public final class MainActivity extends Activity {
                     "0.1.0",
                     "https://developer.android.com/auto",
                     "CIVIC-USB-001");
-            return new UsbDeviceConnectionHolder(result);
+        } catch (RuntimeException error) {
+            return AoaProtocol.SwitchResult.USB_IO_ERROR;
         } finally {
-            connection.close();
+            if (connection != null) {
+                connection.close();
+            }
         }
     }
 
@@ -226,10 +221,4 @@ public final class MainActivity extends Activity {
         if (status != null) status.setText(message);
     }
 
-    private static final class UsbDeviceConnectionHolder {
-        final AoaProtocol.SwitchResult result;
-        UsbDeviceConnectionHolder(AoaProtocol.SwitchResult result) {
-            this.result = result;
-        }
-    }
 }
