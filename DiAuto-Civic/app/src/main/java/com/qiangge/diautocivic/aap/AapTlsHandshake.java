@@ -118,19 +118,21 @@ public final class AapTlsHandshake {
                     runDelegatedTasks(engine);
 
                     if (unwrapped.getStatus() == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+                        byte[] unconsumed = remaining(networkIn);
                         applicationOut = ByteBuffer.allocate(growCapacity(appCapacity));
-                        networkIn = ByteBuffer.wrap(pendingNetwork);
+                        networkIn = ByteBuffer.wrap(unconsumed);
                         unwrapped = engine.unwrap(networkIn, applicationOut);
                     }
 
                     if (unwrapped.getStatus() == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
+                        byte[] incomplete = remaining(networkIn);
                         byte[] more = readTlsMessage(transport, deadline);
                         if (more == null) {
                             return Thread.currentThread().isInterrupted()
                                     ? Result.CANCELLED
                                     : (transport.isConnected() ? Result.PEER_TIMEOUT : Result.TRANSPORT_ERROR);
                         }
-                        pendingNetwork = append(pendingNetwork, more);
+                        pendingNetwork = append(incomplete, more);
                     } else if (unwrapped.getStatus() == SSLEngineResult.Status.OK) {
                         int consumed = unwrapped.bytesConsumed();
                         if (consumed <= 0 && unwrapped.bytesProduced() <= 0 &&
