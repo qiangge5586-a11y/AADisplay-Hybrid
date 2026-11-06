@@ -102,13 +102,13 @@ public final class AapTlsHandshake {
 
                 if (handshakeStatus == SSLEngineResult.HandshakeStatus.NEED_UNWRAP) {
                     if (pendingNetwork.length == 0) {
-                        byte[] next = readTlsMessage(transport, deadline);
-                        if (next == null) {
+                        ReadResult next = readTlsMessage(transport, deadline);
+                        if (next.payload == null) {
                             return Thread.currentThread().isInterrupted()
                                     ? Result.CANCELLED
-                                    : (transport.isConnected() ? Result.PEER_TIMEOUT : Result.TRANSPORT_ERROR);
+                                    : (next.transportError ? Result.TRANSPORT_ERROR : Result.PEER_TIMEOUT);
                         }
-                        pendingNetwork = next;
+                        pendingNetwork = next.payload;
                     }
 
                     ByteBuffer networkIn = ByteBuffer.wrap(pendingNetwork);
@@ -126,13 +126,13 @@ public final class AapTlsHandshake {
 
                     if (unwrapped.getStatus() == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
                         byte[] incomplete = remaining(networkIn);
-                        byte[] more = readTlsMessage(transport, deadline);
-                        if (more == null) {
+                        ReadResult more = readTlsMessage(transport, deadline);
+                        if (more.payload == null) {
                             return Thread.currentThread().isInterrupted()
                                     ? Result.CANCELLED
-                                    : (transport.isConnected() ? Result.PEER_TIMEOUT : Result.TRANSPORT_ERROR);
+                                    : (more.transportError ? Result.TRANSPORT_ERROR : Result.PEER_TIMEOUT);
                         }
-                        pendingNetwork = append(incomplete, more);
+                        pendingNetwork = append(incomplete, more.payload);
                     } else if (unwrapped.getStatus() == SSLEngineResult.Status.OK) {
                         int consumed = unwrapped.bytesConsumed();
                         if (consumed <= 0 && unwrapped.bytesProduced() <= 0 &&
@@ -159,15 +159,24 @@ public final class AapTlsHandshake {
         }
     }
 
-    private byte[] readTlsMessage(AapUsbVersionHandshake.Transport transport, long deadline) {
+    private static final class ReadResult {
+        final byte[] payload;
+        final boolean transportError;
+        ReadResult(byte[] payload, boolean transportError) {
+            this.payload = payload;
+            this.transportError = transportError;
+        }
+    }
+
+    private ReadResult readTlsMessage(AapUsbVersionHandshake.Transport transport, long deadline) {
         while (transport.isConnected() && System.currentTimeMillis() < deadline) {
-            if (Thread.currentThread().isInterrupted()) return null;
-            if (!pendingTlsMessages.isEmpty()) return pendingTlsMessages.removeFirst();
+            if (Thread.currentThread().isInterrupted()) return new ReadResult(null, false);
+            if (!pendingTlsMessages.isEmpty()) return new ReadResult(pendingTlsMessages.removeFirst(), false);
 
             long remaining = deadline - System.currentTimeMillis();
             int count = transport.read(wireReadBuffer, 0, wireReadBuffer.length,
                     (int) Math.min(IO_TIMEOUT_MS, Math.max(1, remaining)));
-            if (count < 0 || count > wireReadBuffer.length) return null;
+            if (count < 0 || count > wireReadBuffer.length) return new ReadResult(null, true);
             if (count == 0) continue;
 
             List<AapRawMessageDecoder.Message> messages =
@@ -180,7 +189,8 @@ public final class AapTlsHandshake {
                 }
             }
         }
-        return pendingTlsMessages.isEmpty() ? null : pendingTlsMessages.removeFirst();
+        if (!pendingTlsMessages.isEmpty()) return new ReadResult(pendingTlsMessages.removeFirst(), false);
+        return new ReadResult(null, !transport.isConnected());
     }
 
     private static boolean writeFully(AapUsbVersionHandshake.Transport transport,
