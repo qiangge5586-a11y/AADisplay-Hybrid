@@ -29,7 +29,7 @@ public class AoaProtocolTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void rejectsEmbeddedNul() {
-        AoaProtocol.encodeIdentityString("bad\\u0000value");
+        AoaProtocol.encodeIdentityString("bad" + ((char) 0) + "value");
     }
 
     @Test
