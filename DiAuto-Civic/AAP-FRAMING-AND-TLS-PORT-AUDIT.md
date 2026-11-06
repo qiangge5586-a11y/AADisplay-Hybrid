@@ -47,11 +47,13 @@ USB bulk reads may contain partial frames or several frames at once. Upstream th
 ## Version exchange implementation
 
 - `AapVersionNegotiator.java`: emits the upstream Version Request and accepts only channel 0 / type 2.
-- `AapUsbVersionHandshake.java`: bounded transport-neutral worker-side exchange with partial-write handling, three 2-second response windows, unrelated-message filtering, and explicit timeout/transport-error results.
-- Tests cover exact request bytes, unrelated control messages, partial writes, success, reset and disconnected transport.
-- The request header length is 6 (two-byte message type + four-byte payload), matching upstream `Messages.createRawMessage`. A test expectation initially used 4 and was corrected after checking upstream source.
+- `AapUsbVersionHandshake.java`: bounded transport-neutral exchange with partial-write handling, three 2-second response windows, unrelated-message filtering, explicit timeout/transport-error results, and cooperative thread interruption.
+- `UsbAapTransport.java`: API-17 adapter for USB bulk read/write. It copies byte slices because the API-17 `bulkTransfer` overload has no offset parameter.
+- `UsbBulkTransport.java`: exposes connection state, treats runtime USB I/O exceptions as transport errors, and closes safely after detach.
+- `MainActivity.java`: runs the AAP version exchange on a dedicated worker after AOA accessory endpoints open; USB detach and Activity destruction close the transport and interrupt the worker. UI completion is ignored for stale/destroyed Activity state.
+- Unit tests cover exact request bytes, valid raw response framing, unrelated status and nonzero-channel filtering, partial writes, success, reset and disconnected transport.
 
-These classes are not yet wired to `UsbBulkTransport` or the Activity lifecycle. The next step is an adapter that maps the bulk endpoint read/write methods to the handshake transport, with a dedicated worker and detach cancellation.
+The version exchange is now wired end-to-end in source from the Activity to USB bulk endpoints. This only validates the pre-TLS version negotiation stage; TLS, status-OK after TLS, encrypted AAP receive pump, protobuf and projection remain unimplemented. CI and API-17 runtime validation are required before calling this build usable.
 
 ## Implemented in this branch
 
@@ -60,10 +62,8 @@ These classes are not yet wired to `UsbBulkTransport` or the Activity lifecycle.
 
 ## Next implementation sequence
 
-1. Finish CI for the AAP frame decoder and tests.
-2. Add a separate bounded raw AAP control-message reader/writer for the pre-TLS exchange. It must preserve incomplete data and reject malformed lengths without consuming the next frame.
-3. Implement version request/response with retry/deadline and exact channel/type checks.
-4. Port TLS as a separate API-17-tested component: certificate/key resource handling, Conscrypt provider loading, SSLEngine NEED_WRAP/NEED_UNWRAP/NEED_TASK handling, underflow buffering, timeout and close behavior.
+2. Verify the USB-bound version request/response on CI and an API-17 runtime.
+3. Port TLS as a separate API-17-tested component: certificate/key resource handling, Conscrypt provider loading, SSLEngine NEED_WRAP/NEED_UNWRAP/NEED_TASK handling, underflow buffering, timeout and close behavior.
 5. Only after TLS succeeds, send status-OK and connect the encrypted frame decoder to a single USB receive pump.
 6. Add message-type parsing and protobuf only after the framing and TLS tests pass.
 7. Keep all wireless discovery, Wi-Fi credential exchange and Bluetooth RFCOMM handoff out of this USB-only build.
