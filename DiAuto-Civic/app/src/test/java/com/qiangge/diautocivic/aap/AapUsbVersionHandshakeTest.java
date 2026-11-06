@@ -31,8 +31,8 @@ public class AapUsbVersionHandshakeTest {
 
     @Test public void acceptsOnlyChannelZeroVersionResponse() {
         byte[] bytes = new byte[] {
-            0,3,0,2,0,4,8,0, // unrelated status
-            0,3,0,2,0,2,1,0  // version response
+            0,3,0,4,0,4,8,0, // unrelated status: encoded length = type(2) + payload(2)
+            0,3,0,4,0,2,1,0  // version response: encoded length = type(2) + payload(2)
         };
         FakeTransport transport = new FakeTransport(bytes);
         assertEquals(AapUsbVersionHandshake.Result.SUCCESS,
@@ -41,7 +41,7 @@ public class AapUsbVersionHandshakeTest {
     }
 
     @Test public void handlesPartialWrites() {
-        FakeTransport transport = new FakeTransport(new byte[] {0,3,0,2,0,2,1,0});
+        FakeTransport transport = new FakeTransport(new byte[] {0,3,0,4,0,2,1,0});
         transport.maxWrite = 3;
         assertEquals(AapUsbVersionHandshake.Result.SUCCESS,
                 new AapUsbVersionHandshake().perform(transport));
