@@ -32,6 +32,6 @@ public class AapVersionNegotiatorTest {
         AapVersionNegotiator n = new AapVersionNegotiator();
         n.createRequest();
         n.reset();
-        assertArrayEquals(new byte[] {0,3,0,4,0,1,0,1,0,2}, n.createRequest());
+        assertArrayEquals(new byte[] {0,3,0,6,0,1,0,1,0,2}, n.createRequest());
     }
 }
