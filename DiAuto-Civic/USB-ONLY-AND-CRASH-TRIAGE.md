@@ -92,3 +92,52 @@ If ADB is unavailable, export the app's internal log plus the system crash repor
 - No source code has yet been ported or modified.
 - No APK has been rebuilt or tested on the Civic.
 - The exact current crash remains unconfirmed until the runtime stack trace is available.
+
+
+## Deeper source-level startup crash analysis (2026-11-06)
+
+The launch path was followed from the launcher Activity into Application initialization and the foreground service. This narrows the highest-risk areas without needing a device log.
+
+### Startup sequence observed
+
+1. Android creates `.App` before the launcher Activity.
+2. `App.onCreate()` calls `isUserUnlocked()`, initializes Conscrypt, constructs `AppComponent` through root registration/settings paths, and registers a broadcast receiver.
+3. `MainActivity.onCreate()` calls `enableEdgeToEdge()`, inflates the Material 3 app theme/layout, constructs `Intent(this, AapService::class.java)`, then starts the foreground service.
+4. `AapService.onCreate()` registers receivers and media session, invokes `WifiAutoStartReceiver.checkAndStart(this)`, constructs wireless managers, and enters Wi-Fi initialization.
+
+### Highest-priority API-17 startup risks
+
+| Priority | Source evidence | Why it is risky on Android 4.2.2 | Required fix |
+|---|---|---|---|
+| P0 | `AapService.kt` imports and stores fields of types `Network`, `NetworkCapabilities`, `NetworkRequest`, `AudioFocusRequest`; also references `ServiceInfo.FOREGROUND_SERVICE_TYPE_*` | These framework classes/constants were introduced after API 17. The service is instantiated on every MainActivity launch, so it is not safe to leave modern framework types in this always-loaded service class. Dalvik verification/class resolution may fail before SDK-gated branches execute. | Move all API 21/26/29+ types and calls into separate version-specific helper classes. The API-17 service class must contain only API-17 framework types. |
+| P0 | `App.kt` imports `NotificationChannel` and `UserManager`; `onCreate()` invokes `isUserUnlocked()`, and the method contains a `UserManager` cast; notification-channel code is gated at API 26 | API 17 has neither class. Guarding code paths is not a sufficient verifier-isolation strategy for old Dalvik. | Move each newer type into an isolated API-specific class; avoid newer framework class references in `App` methods loaded at process startup. |
+| P0 | `MainActivity.kt` calls `enableEdgeToEdge()` and extends `BaseActivity` / `AppCompatActivity`; `styles.xml` sets `AppTheme` parent to `Theme.Material3.DayNight.NoActionBar` | The launcher must inflate this theme before reaching USB. Any unsupported Material/AndroidX resource or runtime API can cause an immediate theme inflation crash. | Replace the launcher theme for Civic with a minimal API-17-compatible AppCompat/platform theme; remove edge-to-edge and unsupported Material3-only theme attributes from the USB build. |
+| P1 | `MainActivity.kt` unconditionally calls `setupWifiDirectInfo()`; it starts `AapService` immediately | Wireless discovery and service startup are still on the mandatory launcher path, despite the user's USB-only requirement. | Remove Wi-Fi setup calls and start the service in explicit USB-only mode. |
+| P1 | `AapService.onCreate()` invokes `WifiAutoStartReceiver.checkAndStart()`, constructs `NativeAaHandshakeManager`, `WifiDirectManager`, `SoftApCredentialsProvider`, `LocalHotspotCredentialsProvider`, and optionally `NearbyManager`; then calls `initWifiModeWithOptionalWait()` | Wireless stack initialization is unconditional or partially unconditional. It creates needless API/permission/driver interactions on the target and may fail independently of USB. | Compile out or dependency-inject a no-op wireless transport for the Civic USB flavor; do not instantiate wireless managers. |
+| P1 | `VideoDecoder.kt` refers to `MediaCodecList.ALL_CODECS`, `MediaCodecInfo` and API-31 `Build.SOC_MANUFACTURER` | HEVC capability probing must not run on API 17; API 21+ MediaCodecList usage is only partly gated. | Keep API-17 codec path limited to `MediaCodec` / `MediaFormat` APIs available on API 16/17; put API-21+ codec enumeration and API-31 SoC probing in isolated helpers. |
+| P1 | `UsbReceiver.kt` and `DeviceIntent.kt` contain API-33 typed `getParcelableExtra` overloads behind SDK checks; `UsbReceiver` also references modern PendingIntent flags | These methods/flags are newer than API 17 and sit in USB code that will be loaded on the target. | Keep typed-extra and mutable PendingIntent operations in API-33 helper; use legacy Parcelable overload and flags on API 17. |
+| P2 | `CMakeLists.txt` always declares imported `libusb1.0.so` for `${ANDROID_ABI}`; also packages FFmpeg and builds `usbhelper`, `hur_soft_hevc`, `local_hotspot_radio` | A missing/wrong ARMv7 shared object or a binary built for a newer Android API can produce `UnsatisfiedLinkError` / `dlopen failed` when loaded. | Audit every packaged ARMv7 ELF, SONAME, NEEDED entries and Android API floor. For USB-only flavor, exclude `local_hotspot_radio` and unused HEVC native library from the package if not required. |
+
+### Important distinction: install succeeds vs app crashes
+
+The GitHub source does not prove the exact exception from the user's installed APK. However, because the app's first launch always passes through `App`, `MainActivity`, Material 3 theme inflation and `AapService`, the first three P0 items are the strongest source-based candidates for an immediate post-launch crash. The wireless initialization is a separate confirmed design defect for USB-only mode, not yet proven to be the crash trigger.
+
+### USB-specific path checks
+
+- The manifest declares `android.hardware.usb.host` as optional and registers `UsbAttachedActivity` for USB device attach.
+- `UsbAccessoryMode` performs AOA GET_PROTOCOL / SEND_STRING / START control transfers and expects the phone to re-enumerate in Google accessory VID/PID mode.
+- `UsbAccessoryConnection` opens the re-enumerated device, claims its interface, selects bulk IN/OUT endpoints, and transfers bytes.
+- `CommManager.connect(UsbDevice)` is the USB entry into the AAP transport.
+- `UsbNative` loads `usb1.0` and `usbhelper`; this must be lazy and must not be initialized during Application or launcher startup.
+- The head unit's physical USB port and kernel must actually expose USB host mode. A software port cannot repair a peripheral-only port.
+
+### Revised repair order
+
+1. Make the launcher Application, launcher theme and foreground service load safely on API 17.
+2. Split all API-21/26/29/31+ framework references into separately loaded helpers.
+3. Add a Civic USB-only transport policy and stop all wireless manager construction/startup.
+4. Keep the AOA + USB bulk transport + AAP session path; lazy-load USB native libraries only when a compatible phone is attached.
+5. Strip Material 3 / modern navigation and optional features from the first API-17 smoke-test build; add features back only after the basic launcher and USB transport are stable.
+6. Validate the ARMv7 native dependency set and then test AOA enumeration, AAP handshake, video/audio/touch.
+
+This analysis is source-derived. It does not claim a confirmed crash exception, successful build, APK, or vehicle validation.
