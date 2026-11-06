@@ -30,38 +30,48 @@ public final class UsbBulkTransport {
     }
 
     public static UsbBulkTransport open(UsbManager manager, UsbDevice device) {
-        if (manager == null || device == null || !manager.hasPermission(device)) {
+        if (manager == null || device == null) {
             return null;
         }
 
-        UsbDeviceConnection connection = manager.openDevice(device);
-        if (connection == null) {
-            return null;
-        }
-
-        for (int interfaceIndex = 0; interfaceIndex < device.getInterfaceCount(); interfaceIndex++) {
-            UsbInterface candidate = device.getInterface(interfaceIndex);
-            UsbEndpoint input = null;
-            UsbEndpoint output = null;
-
-            for (int endpointIndex = 0; endpointIndex < candidate.getEndpointCount(); endpointIndex++) {
-                UsbEndpoint endpoint = candidate.getEndpoint(endpointIndex);
-                if (endpoint.getType() != UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                    continue;
-                }
-                if (endpoint.getDirection() == UsbConstants.USB_DIR_IN && input == null) {
-                    input = endpoint;
-                } else if (endpoint.getDirection() == UsbConstants.USB_DIR_OUT && output == null) {
-                    output = endpoint;
-                }
+        UsbDeviceConnection connection = null;
+        try {
+            if (!manager.hasPermission(device)) {
+                return null;
+            }
+            connection = manager.openDevice(device);
+            if (connection == null) {
+                return null;
             }
 
-            if (input != null && output != null && connection.claimInterface(candidate, true)) {
-                return new UsbBulkTransport(connection, candidate, input, output);
+            for (int interfaceIndex = 0; interfaceIndex < device.getInterfaceCount(); interfaceIndex++) {
+                UsbInterface candidate = device.getInterface(interfaceIndex);
+                UsbEndpoint input = null;
+                UsbEndpoint output = null;
+
+                for (int endpointIndex = 0; endpointIndex < candidate.getEndpointCount(); endpointIndex++) {
+                    UsbEndpoint endpoint = candidate.getEndpoint(endpointIndex);
+                    if (endpoint.getType() != UsbConstants.USB_ENDPOINT_XFER_BULK) {
+                        continue;
+                    }
+                    if (endpoint.getDirection() == UsbConstants.USB_DIR_IN && input == null) {
+                        input = endpoint;
+                    } else if (endpoint.getDirection() == UsbConstants.USB_DIR_OUT && output == null) {
+                        output = endpoint;
+                    }
+                }
+
+                if (input != null && output != null && connection.claimInterface(candidate, true)) {
+                    return new UsbBulkTransport(connection, candidate, input, output);
+                }
             }
+        } catch (RuntimeException ignored) {
+            // A detach or permission race can invalidate an operation mid-open.
         }
 
-        connection.close();
+        if (connection != null) {
+            connection.close();
+        }
         return null;
     }
 
