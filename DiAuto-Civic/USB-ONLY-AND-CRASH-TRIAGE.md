@@ -35,6 +35,8 @@ The upstream contains a usable starting USB path:
 - `UsbDeviceCompat.kt`: classifies devices and detects accessory mode.
 - `CommManager.kt`: owns USB connection and AAP transport lifecycle.
 
+The USB service path is present, but the service is not currently USB-only: its startup still initializes wireless handshake / Wi-Fi Direct / hotspot credential managers. This is a verified source-level reason to separate transport initialization before the Civic build.
+
 Important target check: the Civic's physical USB port must enumerate the phone as a USB host. If the vehicle port is device/peripheral-only, app changes cannot turn it into a host; verify host-controller/OTG wiring and kernel support before protocol work.
 
 ## Crash findings from source inspection
@@ -54,7 +56,7 @@ The Manifest uses `tools:overrideLibrary` for several Google/Shizuku libraries. 
 2. **API-level classes in startup/service paths.** `App.kt` imports `UserManager` and `NotificationChannel`; it gates the newer calls, but class verification on Dalvik must be tested. `AapService.kt` contains API-21 `Network` / `NetworkCapabilities` / `NetworkRequest` references and an API-26 `AudioFocusRequest` field/type. Move these into SDK-specific helper classes so API 17 never loads them.
 3. **New Activity APIs.** `MainActivity.kt` uses AndroidX Activity APIs such as `enableEdgeToEdge`, Activity Result and newer lifecycle integrations. The selected library implementation and runtime API floor must be compatible with API 17 or replaced with a legacy Activity path.
 4. **Native library loading.** CMake builds `usbhelper`, `hur_soft_hevc` and `local_hotspot_radio`; libusb and FFmpeg .so files are imported from ABI-specific jniLibs. Inspect every packaged ELF for ARMv7 ABI and minimum Android API; a single incompatible .so can crash when loaded.
-5. **Wireless startup side effects.** `MainActivity.onCreate` starts `AapService` and calls wireless setup. For the Civic build, service startup must initialize USB-only components and must not instantiate Wi-Fi Direct / Nearby / SoftAP code.
+5. **Wireless startup side effects.** `AapService.onCreate` currently constructs `NativeAaHandshakeManager`, `WifiDirectManager`, `LocalHotspotCredentialsProvider` and conditionally `NearbyManager` (upstream lines around 765–783). This is a concrete separation point: the Civic USB flavor must not construct these wireless managers at service startup. `MainActivity.onCreate` also starts `AapService` and calls wireless setup, which must be disabled in the USB-only flavor.
 
 The exact crash cause cannot be confirmed without the failing APK's `logcat` stack trace. The findings above are source-based suspects, not a diagnosis of a particular runtime exception.
 
