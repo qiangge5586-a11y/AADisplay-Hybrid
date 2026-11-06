@@ -44,6 +44,15 @@ USB bulk reads may contain partial frames or several frames at once. Upstream th
 - Upstream currently uses `NoCheckTrustManager`, which accepts any peer certificate. That is a compatibility/security behavior, not a safe default. Do not silently inherit it: first establish the actual Android Auto TLS trust requirement and document the risk before choosing a trust policy.
 - API 17's platform TLS provider cannot be assumed to offer the same TLS 1.2 behavior as modern Android. Test the exact Conscrypt 2.5.3 ARMv7 build on API 17 before integrating it; avoid loading provider/native classes in the USB diagnostic startup path.
 
+## Version exchange implementation
+
+- `AapVersionNegotiator.java`: emits the upstream Version Request and accepts only channel 0 / type 2.
+- `AapUsbVersionHandshake.java`: bounded transport-neutral worker-side exchange with partial-write handling, three 2-second response windows, unrelated-message filtering, and explicit timeout/transport-error results.
+- Tests cover exact request bytes, unrelated control messages, partial writes, success, reset and disconnected transport.
+- The request header length is 6 (two-byte message type + four-byte payload), matching upstream `Messages.createRawMessage`. A test expectation initially used 4 and was corrected after checking upstream source.
+
+These classes are not yet wired to `UsbBulkTransport` or the Activity lifecycle. The next step is an adapter that maps the bulk endpoint read/write methods to the handshake transport, with a dedicated worker and detach cancellation.
+
 ## Implemented in this branch
 
 - `AapFrameDecoder.java`: incremental post-TLS encrypted-frame parser; defensive frame payload copy; optional first-fragment total parsing; bounded 16-bit body length; reset after physical detach; raw AAP control-message encoder for protocol tests and later handshake work.
