@@ -31,6 +31,8 @@ A small standalone Android application now exists under `DiAuto-Civic/app`:
 - `AoaProtocolTest.java`: unit tests for NUL framing, empty strings, ASCII validation and AOA request constants.
 - `.github/workflows/diauto-civic-build.yml`: CI workflow to run unit tests and build a debug APK.
 
+**CI status:** workflow run [42231949204](https://github.com/qiangge5586-a11y/AADisplay-Hybrid/actions/runs/42231949204) passed the AOA protocol unit tests and built the current API-17-themed diagnostic APK. The artifact is available from the run's Artifacts section.
+
 **This is currently a USB/AOA diagnostic shell, not yet a complete Android Auto receiver.** It does not yet implement AAP TLS/session handshake, message channels, audio, video projection or touch input.
 
 ## USB connection sequence
