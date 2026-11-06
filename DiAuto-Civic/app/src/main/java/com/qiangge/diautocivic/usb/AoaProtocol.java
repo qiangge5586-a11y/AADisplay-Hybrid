@@ -44,15 +44,16 @@ public final class AoaProtocol {
         if (value == null) {
             throw new IllegalArgumentException("AOA identity string must not be null");
         }
-        byte[] text = value.getBytes(ASCII);
-        for (int i = 0; i < text.length; i++) {
-            if (text[i] == 0) {
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            if (ch == 0) {
                 throw new IllegalArgumentException("AOA identity string contains an embedded NUL");
             }
-            if ((text[i] & 0x80) != 0) {
+            if (ch > 0x7f) {
                 throw new IllegalArgumentException("AOA identity strings must be ASCII");
             }
         }
+        byte[] text = value.getBytes(ASCII);
         byte[] payload = new byte[text.length + 1];
         System.arraycopy(text, 0, payload, 0, text.length);
         payload[payload.length - 1] = 0;
