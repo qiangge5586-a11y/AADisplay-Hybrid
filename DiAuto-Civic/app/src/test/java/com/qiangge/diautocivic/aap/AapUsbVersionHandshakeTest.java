@@ -31,8 +31,9 @@ public class AapUsbVersionHandshakeTest {
 
     @Test public void acceptsOnlyChannelZeroVersionResponse() {
         byte[] bytes = new byte[] {
-            0,3,0,4,0,4,8,0, // unrelated status: encoded length = type(2) + payload(2)
-            0,3,0,4,0,2,1,0  // version response: encoded length = type(2) + payload(2)
+            0,3,0,4,0,4,8,0, // unrelated status
+            1,3,0,4,0,2,1,0, // wrong channel: must not complete negotiation
+            0,3,0,4,0,2,1,0  // valid channel-0 version response
         };
         FakeTransport transport = new FakeTransport(bytes);
         assertEquals(AapUsbVersionHandshake.Result.SUCCESS,
