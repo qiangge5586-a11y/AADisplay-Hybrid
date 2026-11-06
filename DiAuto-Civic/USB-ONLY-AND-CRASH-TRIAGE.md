@@ -376,3 +376,15 @@ Scope limitations:
 - No AAP TLS/session handshake, media/control channels, audio, video projection or touch pipeline has been ported yet.
 - No physical USB phone or Civic head-unit test has been performed. CI build success proves source compilation/unit tests only, not API-17 runtime or hardware compatibility.
 - The initial diagnostic APK is not a usable Android Auto receiver and should not be described as the final installable product.
+### Corrected API-17 theme build result
+
+The manifest theme was corrected to android:style/Theme.Holo.Light.NoActionBar so the launcher does not request the API-21 Material platform theme on Android 4.2.2.
+
+Workflow run 42231949204, commit cc4f6931a8772d6337ba035a9ee60ba8d21c4509, completed successfully after that correction:
+- AOA protocol unit tests: success.
+- app:assembleDebug: success.
+- Artifact diauto-civic-usb-debug uploaded, artifact ID 13510561028.
+- Run page: https://github.com/qiangge5586-a11y/AADisplay-Hybrid/actions/runs/42231949204
+- Artifact page: https://github.com/qiangge5586-a11y/AADisplay-Hybrid/actions/runs/42231949204/artifacts/13510561028
+
+This verifies that the current source snapshot at commit cc4f693 builds in CI and that its unit tests pass. It still does not verify runtime on Android 4.2.2, USB host capability, AOA behavior with a real phone, or the AAP receiver pipeline.
