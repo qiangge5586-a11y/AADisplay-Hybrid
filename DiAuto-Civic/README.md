@@ -1,75 +1,74 @@
-# DiAuto Civic — Android Auto receiver adaptation
+# DiAuto Civic — API 17 USB Android Auto receiver
 
-This directory is an isolated workstream for adapting the DiAuto Android Auto head-unit receiver to the 2019 Honda Civic factory head unit.
+This is an isolated Android Auto / AAP receiver workstream for the 2019 Honda Civic factory center display.
 
-## Target device baseline
+## Target device
 
 - Vehicle: 2019 Honda Civic, factory center display
-- Head-unit OS: Android 4.2.2 (API 17)
-- CPU ABI: ARMv7
-- Privileges: root access is available on the head unit
-- Intended role: Android Auto receiver running on the head unit
-- Phone-side Android Auto projection: supplied by a compatible Android phone
+- Head-unit OS: Android 4.2.2 / API 17
+- CPU: ARMv7
+- Root: available, but not required by the USB transport
+- Connection: **USB cable only**
 
-The hardware/firmware baseline is based on the user's vehicle report. Exact board, SoC, display dimensions, audio routing, Wi-Fi chipset/driver and Bluetooth stack still require on-device inventory.
+## Hard scope
 
-## Selected Civic connection mode
+The Civic build must not initialize or expose wireless Android Auto paths:
+- no Wi-Fi Direct or SoftAP connection mode
+- no Nearby Connections
+- no Bluetooth RFCOMM credential handoff
+- no wireless discovery/server mode
+- no hotspot configuration in this DiAuto USB build
 
-**USB only.** The Civic build must use a wired USB host/AOA connection path. Do not expose or initialize wireless Android Auto discovery, Wi-Fi Direct, SoftAP, Nearby Connections, Bluetooth RFCOMM credential handoff, or wireless auto-connect. Keep the AAP session/projection pipeline above the USB transport. See [USB-only scope and crash triage](USB-ONLY-AND-CRASH-TRIAGE.md).
+This is the Android Auto / AAP workstream. Do not mix in DiPlay's iAP2, AirPlay, CSM or MFi code. Do not modify the separate CivicMirror component.
 
-## Project boundaries
+## Current source implementation
 
-- This is the **Android Auto / AAP** workstream. Do not reuse DiPlay's iAP2, AirPlay type-130 tunnel, CSM or MFi implementation as if it were Android Auto.
-- Keep this work isolated from the existing AADisplay Hybrid legacy Android Auto virtual-display component and wireless CarPlay sender.
-- Keep DiPlay reverse-engineering and receiver code in its existing repository/workstream.
-- Root is an optional head-unit-side compatibility mechanism only. Any privileged Wi-Fi or system configuration must be narrowly scoped, reversible, backed up, and logged. Do not change MCU/CAN, reverse-camera, DSP or factory projection services without a verified rollback path.
+A small standalone Android application now exists under `DiAuto-Civic/app`:
 
-## Compatibility strategy
+- `AoaProtocol.java`: API-17 Android USB Host AOA negotiation; sends all six identity strings with the required trailing NUL byte; validates complete control-transfer lengths; distinguishes START acknowledgement from disconnect/error ambiguity.
+- `UsbBulkTransport.java`: opens an accessory-mode USB device, selects an interface only when it has both BULK IN and BULK OUT endpoints, claims it, and releases the interface before closing the connection.
+- `MainActivity.java`: minimal diagnostic UI to enumerate USB devices, request permission, issue AOA negotiation, rescan after re-enumeration, and open the bulk interface.
+- `AoaProtocolTest.java`: unit tests for NUL framing, empty strings, ASCII validation and AOA request constants.
+- `.github/workflows/diauto-civic-build.yml`: CI workflow to run unit tests and build a debug APK.
 
-1. **Source baseline and dependency audit**
-   - Pin the selected upstream DiAuto revision and record its commit.
-   - Inventory minSdk, targetSdk, Gradle/AGP/Kotlin versions, AndroidX and Play Services dependencies.
-   - Identify API references unavailable on API 17, including references that can fail during class verification or static initialization.
-   - Produce an API-17-compatible build strategy before changing protocol behavior.
+**This is currently a USB/AOA diagnostic shell, not yet a complete Android Auto receiver.** It does not yet implement AAP TLS/session handshake, message channels, audio, video projection or touch input.
 
-2. **USB-only Civic transport**
-   - Use USB host discovery, Android Open Accessory Protocol (AOA) negotiation, permission handling, accessory re-enumeration and bulk endpoint transport as the only connection path.
-   - Remove wireless discovery, Wi-Fi Direct, SoftAP and Nearby connection startup from the Civic build.
-   - Verify that the factory USB port and kernel expose USB host capability; software cannot convert a peripheral-only port into a host.
+## USB connection sequence
 
-3. **Legacy Android platform layer**
-   - Isolate API-level-specific calls behind compatibility interfaces.
-   - Use classic Bluetooth/RFCOMM APIs available on the target platform, with runtime permission handling appropriate to API 17.
-   - Implement a legacy SoftAP adapter using the platform's available Wi-Fi APIs and narrowly scoped reflection/root fallback where necessary.
-   - Read back SSID, security mode, passphrase and network address from the actual head unit; never assume a configuration write succeeded.
-   - Add timeout, cleanup, rollback and state verification to privileged operations.
+1. Enumerate the connected USB device through `UsbManager`.
+2. Request the Android USB permission for that device.
+3. Read AOA protocol version (request 51).
+4. Send manufacturer/model/description/version/URI/serial (request 52), each as ASCII plus exactly one trailing NUL.
+5. Send AOA START (request 53).
+6. Wait for the phone to disconnect and re-enumerate as Google AOA VID/PID 18D1:2D00 or 18D1:2D01.
+7. Request permission again for the newly enumerated accessory device.
+8. Claim an interface with BULK IN and BULK OUT endpoints and open the transport.
+9. Only after this transport is stable, attach the AAP protocol/session layer.
 
-4. **Android Auto protocol path**
-   - Preserve the AAP transport/session state machine and audit its USB/TCP/Bluetooth bootstrap paths separately.
-   - Validate Bluetooth discovery/pairing, Wi-Fi handoff, socket setup, TLS/session negotiation and AAP framing against real phone-side logs.
-   - Add bounded retries, cancellation, reconnect and resource cleanup. Do not substitute guessed handshake bytes or claim compatibility without a trace-backed test.
+A successful START control-transfer result is not proof that step 6 completed. Re-enumeration must be observed separately.
 
-5. **Legacy media/rendering path**
-   - Validate H.264 hardware decode and supported stream profiles on the head unit.
-   - Use API-17-compatible rendering and audio APIs; measure actual resolution, frame pacing, touch mapping and audio route behavior.
-   - Disable unsupported codecs/features explicitly rather than allowing a crash or black screen.
+## Build
 
-6. **Build and vehicle validation**
-   - Build an ARMv7 APK with an API-17-compatible toolchain/dependency set.
-   - Run static/API compatibility checks and protocol tests before installing it.
-   - Test on the actual Civic head unit, record logs and outcomes, and retain a known-good rollback APK/configuration.
+The standalone project uses Android Gradle Plugin 8.7.3, Gradle 8.9 in CI, JDK 17, compileSdk 35, minSdk 17 and targetSdk 28. It deliberately has no AndroidX, Kotlin, Nearby or Conscrypt dependency in the initial USB shell.
 
-## Acceptance gates
+GitHub Actions runs:
+- `gradle -p DiAuto-Civic :app:testDebugUnitTest`
+- `gradle -p DiAuto-Civic :app:assembleDebug`
 
-- APK installs and launches on Android 4.2.2 / API 17 without missing-class or unsupported-method failures.
-- Head-unit hotspot configuration is read back and verified, not merely reported as successful.
-- Bluetooth bootstrap and Wi-Fi handoff complete with a supported Android phone.
-- AAP session establishes and recovers from timeout/disconnect without leaked sockets or stuck services.
-- Video, audio and touch work on the factory display for a sustained test session.
-- Privileged changes can be reverted and factory vehicle functions remain intact.
+The build result must be checked in the Actions run before describing the APK as built. A successful CI build does not prove runtime compatibility on the Android 4.2.2 Civic head unit.
 
-## Current status
+## Known remaining work
 
-**USB-only scope selected; crash triage and API-17 source audit in progress.** The upstream USB/AOA path has been identified, and likely API-17 dependency/class-loading/native-library risks are documented. The exact crash still requires a logcat stack trace. No USB-only source port or API-17 APK build has been completed, and no Civic test is claimed.
+1. Run CI and fix any compile/test failures.
+2. Add a bounded USB attach → permission → AOA → re-enumeration state machine; the current diagnostic shell requires manual rescan/selection.
+3. Add USB detach cancellation, permission denial recovery, retry deadlines and endpoint descriptor diagnostics.
+4. Port only the upstream AAP framing/TLS/session components required by USB; exclude Wi-Fi, Bluetooth handoff and Nearby dependencies.
+5. Audit API-17 bytecode and every resolved dependency before importing AndroidX or Conscrypt.
+6. Add the AAP control/media/video/audio pipeline and API-17-compatible rendering.
+7. Test on the actual Civic hardware; verify USB host capability, ARMv7 ABI, display, audio and sustained session stability.
 
-Next implementation gate: inspect and pin the upstream DiAuto source revision, then create a concrete API-17 incompatibility inventory before modifying application code.
+## Crash triage status
+
+The upstream DiAuto source audit found high-risk API-21/24/26/29 references in startup/service paths and an eager Application dependency graph. These are candidate compatibility risks, not a confirmed exception cause. The installed APK has not been available for runtime stack-trace inspection, and no claim is made that the original crash is fixed.
+
+See [API 17 compatibility audit](API17-COMPATIBILITY-AUDIT.md) and [USB-only crash triage](USB-ONLY-AND-CRASH-TRIAGE.md).
