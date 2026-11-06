@@ -77,6 +77,11 @@ public final class MainActivity extends Activity {
                 autoConnectFromScan();
             } else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                 UsbDevice device = (UsbDevice) intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+                if (device != null && permissionRequestPending &&
+                        device.getDeviceName().equals(permissionDeviceName)) {
+                    permissionRequestPending = false;
+                    permissionDeviceName = null;
+                }
                 if (device != null && activeTransport != null &&
                         device.getDeviceName().equals(activeDeviceName)) {
                     activeTransport.close();
