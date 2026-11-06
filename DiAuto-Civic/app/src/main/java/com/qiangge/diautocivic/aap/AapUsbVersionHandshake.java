@@ -50,6 +50,7 @@ public final class AapUsbVersionHandshake {
             }
 
             if (!writeFully(transport, request)) {
+                if (Thread.currentThread().isInterrupted()) return Result.CANCELLED;
                 negotiator.fail();
                 return Result.TRANSPORT_ERROR;
             }
