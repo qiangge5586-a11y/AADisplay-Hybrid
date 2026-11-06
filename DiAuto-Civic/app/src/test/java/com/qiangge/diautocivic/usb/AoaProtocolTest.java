@@ -27,6 +27,11 @@ public class AoaProtocolTest {
         AoaProtocol.encodeIdentityString("本田");
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void rejectsEmbeddedNul() {
+        AoaProtocol.encodeIdentityString("bad\\u0000value");
+    }
+
     @Test
     public void allSixIdentitySlotsAreDefined() {
         assertEquals(0, AoaProtocol.STRING_MANUFACTURER);
