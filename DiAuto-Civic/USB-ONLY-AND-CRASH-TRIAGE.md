@@ -267,3 +267,53 @@ Evidence references (upstream main snapshot):
 - app/src/main/res/values/styles.xml: 8a7355e1c374f37ac4a4cf6b60dd59fbf8b9de9a
 
 This audit records declared configuration only. No dependency resolution, merged-manifest build, native ELF inspection, APK build or device test was performed.
+## USB transport call-site audit (2026-11-06)
+
+### Confirmed USB transport selection
+
+CommManager selects the transport using Settings.useLibusb:
+- false (the default in Settings.kt): UsbAccessoryConnection, using Android UsbManager / UsbDeviceConnection / claimInterface / bulkTransfer APIs.
+- true: LibusbAccessoryConnection, which instantiates UsbNative and uses JNI/libusb.
+
+Settings.useLibusb reads the persisted preference use-libusb and defaults to false. UsbAttachedActivity also falls back to false when settings are unavailable. Therefore the ordinary default AOA/USB path does not require UsbNative or libusb.
+
+### Native load call sites are now mapped
+
+- UsbNative companion initializer loads usb1.0 and usbhelper. UsbNative instance initialization then calls initContext().
+- UsbNative construction is present in UsbAccessoryMode only when useLibusb=true, and in LibusbAccessoryConnection.connect().
+- FfmpegHevcDecoder companion initialization loads hur_soft_hevc, but that class is only needed for optional software HEVC decoding; remove it from the USB-only Civic package if the selected video path does not require software HEVC.
+- LegacyHotspotNative loads local_hotspot_radio; this is unrelated to USB AOA/Bulk transport and should be excluded from the Civic USB variant unless another retained feature demonstrably calls it.
+
+Consequently, it would be inaccurate to claim libusb is unconditionally loaded at Application startup based on UsbNative alone. The correct Civic design is to force the standard Android USB host transport and remove the libusb preference/branch from the Civic flavor, then omit libusb JNI binaries if no remaining code references them.
+
+### Standard Android USB transport is suitable as the baseline
+
+The non-libusb path performs AOA control transfers through UsbDeviceConnection.controlTransfer(), then opens the re-enumerated accessory with UsbManager.openDevice(), claims the USB interface, selects IN/OUT endpoints and exchanges data using bulkTransfer(). These Android USB Host APIs predate API 17 (USB Host API support was introduced before Android 4.2), so the Java USB path is the correct compatibility baseline. This does not prove the Civic head unit's physical USB port is in host mode; that remains a hardware prerequisite.
+
+### AOA and connection lifecycle details
+
+- AOA switch opens the device with UsbManager.openDevice(), requests protocol version 51, sends the six identification strings with request 52, then sends request 53 to trigger accessory re-enumeration.
+- The source currently uses a fixed 500 ms delay after the START request and returns success even if the control transfer result is negative, because it treats immediate disconnect as a possible re-enumeration. This is a heuristic, not proof the phone actually re-enumerated. Civic code should verify the subsequent USB attach/accessory-mode event and use a bounded retry/deadline rather than treating the START attempt alone as a complete connection.
+- The standard USB transport claims interface 0 and picks the first IN and OUT endpoints without checking that both are BULK endpoints. Add explicit endpoint-type validation and report interface/endpoint descriptors when the device is unsupported.
+- UsbAccessoryConnection disconnect() closes the UsbDeviceConnection before attempting releaseInterface(); the later release may fail because the connection is already closed. Prefer releaseInterface() before close(), with cleanup guarded so disconnect remains idempotent.
+- The USB device filter includes a catch-all <usb-device /> entry, so the system may offer the app for unrelated USB devices. Runtime filtering rejects non-Android devices, but a Civic variant should narrow the filter to appropriate Android/AOA interface matches where practical.
+
+### USB-only Civic implementation decisions
+
+1. Use UsbAccessoryMode's standard controlTransfer path; remove the libusb switch from Civic UI/settings and hard-code the Civic transport to UsbAccessoryConnection.
+2. Keep USB transport objects out of Application startup. Instantiate them only after USB attach, permission grant and AOA re-enumeration.
+3. Validate interface class/subclass/protocol and bulk endpoint type before claiming/opening a session; do not assume interface index 0 is always the AOA data interface.
+4. Treat AOA START as a transition request only. Wait for the new USB device identity/attach event, obtain permission for the re-enumerated device, and then open the accessory transport.
+5. Remove LibusbAccessoryConnection, UsbNative, libusb1.0.so and usbhelper from the Civic source set/package only after verifying no retained source references them.
+6. Remove local_hotspot_radio and hur_soft_hevc from Civic only after confirming the USB H.264 path and retained settings do not load them.
+7. Keep the upstream branch untouched; apply these changes only under DiAuto-Civic.
+
+Evidence references (upstream main snapshot):
+- UsbAccessoryMode.kt: eeeb2f7ff08adfd033c95483b43e9e615f943ad0
+- LibusbAccessoryConnection.kt: 281dd73cf7fc38d92338b30c223939f95002b2bf
+- UsbAccessoryConnection.kt: retrieved during this pass; verify blob SHA in the next implementation commit
+- UsbReceiver.kt: 077c23e5b0d09904f7c1e201d2d0459d7bbe5ddb
+- UsbDeviceCompat.kt: 7d58b1e7b45f2842ff66d1b010580196da05cd77
+- FfmpegHevcDecoder.kt: 863de1bc7aaedc9274eecaf4d238cb3873a47aa1
+
+Static source audit only. No USB phone, Honda head unit, API-17 runtime or APK build was available for validation.
