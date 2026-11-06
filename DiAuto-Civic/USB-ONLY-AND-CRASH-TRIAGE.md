@@ -141,3 +141,74 @@ The GitHub source does not prove the exact exception from the user's installed A
 6. Validate the ARMv7 native dependency set and then test AOA enumeration, AAP handshake, video/audio/touch.
 
 This analysis is source-derived. It does not claim a confirmed crash exception, successful build, APK, or vehicle validation.
+
+## Application object graph and Manifest audit (2026-11-06)
+
+This pass inspected the complete upstream App.kt, AppComponent.kt, launcher MainActivity.kt, USB attach activity/receiver, and AndroidManifest.xml.
+
+### Newly confirmed eager initialization chain
+
+App.component is declared by lazy, but App.onCreate() immediately evaluates component.suExecutor.register().
+
+That access constructs the entire AppComponent, whose non-lazy properties eagerly instantiate:
+- Settings(app)
+- VideoDecoder(settings, DeviceMemoryProfile.readWithOverride(...))
+- AudioDecoder()
+- CommManager(app, settings, audioDecoder, videoDecoder)
+- CarKeysManager()
+
+Only clusterVideoDecoder is lazy.
+
+This means decoder and communication-manager construction happens during Application.onCreate(), before MainActivity is displayed and before any USB session. This expands the startup crash surface beyond the previously listed App.kt framework references.
+
+Required Civic change:
+1. Split root registration from the general application dependency graph; do not access a property that forces all of AppComponent to initialize.
+2. Make VideoDecoder, AudioDecoder, CommManager, and other session components lazy or construct them from a USB-session component only.
+3. Keep Application.onCreate() limited to API-17-safe logging/settings bootstrap and essential root setup.
+4. Verify that CommManager and decoder constructors do not call System.loadLibrary, MediaCodec enumeration, or API-21+ framework APIs before USB attach.
+
+### Manifest findings
+
+The upstream manifest still includes:
+- WifiAutoStartReceiver for android.net.wifi.STATE_CHANGE.
+- AutoStartReceiver for Bluetooth ACL connection.
+- Boot/quick-boot receiver declarations and broad automatic-start behavior.
+- Wi-Fi, Nearby Wi-Fi, Bluetooth scan/connect/advertise, foreground-service-type and notification permissions.
+- <queries> package/intent visibility declarations.
+- Modern activity/service attributes including directBootAware, resizeableActivity, supportsPictureInPicture, localeConfig, foregroundServiceType and exported.
+
+These declarations are not all equally problematic: some are newer manifest attributes or elements that older platform parsers may ignore, while newer permission names may simply be ineffective on API 17. The source alone does not prove that any single manifest item is the launch crash. They do prove the upstream manifest is not a clean USB-only/API-17 manifest.
+
+Required Civic manifest work:
+1. Create a dedicated USB-only manifest overlay rather than editing upstream behavior globally.
+2. Remove Wi-Fi state and Bluetooth ACL auto-start receivers from the Civic variant; retain only boot/USB receivers that the USB product actually needs.
+3. Remove permissions/features used only by wireless AA and modern-only services after call-site dependency analysis.
+4. Remove modern service attributes and unsupported component metadata from the API-17 variant where not needed; use API-17-compatible service startup/notification behavior instead of foreground-service APIs introduced later.
+5. Keep android.hardware.usb.host optional until the Civic hardware USB-host capability is confirmed; app manifest declarations cannot create host-controller support.
+
+### USB path API-17 observations
+
+- UsbReceiver uses the legacy getParcelableExtra(String) branch below API 33 and legacy PendingIntent.FLAG_UPDATE_CURRENT below API 31. Those branches are appropriate for API 17; the newer symbols should still be isolated if Dalvik verifier testing shows class/method resolution issues.
+- UsbAttachedActivity references UserManager but guards its use behind API 24. Because this Activity is a declared USB attach entry point, isolate the Direct-Boot check in an API-24 helper so the USB Activity class itself stays API-17-safe.
+- UsbAttachedActivity calls ContextCompat.startForegroundService for accessory-mode devices. Foreground-service startup is a modern API; API 17 requires a legacy startService path and a notification strategy supported by the old platform.
+- MainActivity constructs a service Intent and uses ContextCompat.startForegroundService on every launch. This is not suitable as the only service-start path for API 17.
+- UsbDeviceCompat uses API-21 USB product/manufacturer string accessors only inside an SDK check and falls back to VID/PID on older releases; retain that fallback.
+
+### Revised next implementation slice
+
+Before importing the full upstream app, implement a small API-17-safe Civic shell:
+1. A minimal Application with no eager decoder/communication graph.
+2. A legacy launcher Activity and API-17 theme/resources.
+3. A plain API-17 service-start path with no foreground-service-type dependency.
+4. A minimal manifest containing launcher, USB attach Activity, USB receiver and only required permissions.
+5. A USB-session factory that constructs the USB transport and AAP layers only after the phone is attached and AOA mode is established.
+
+Evidence references (upstream main snapshot):
+- App.kt: eec34526a46c6105f800a7b53987a92f4effd14a
+- AppComponent.kt: 5ed1a1e731b76bfcd35044f4bcb5f3e8254f766c
+- MainActivity.kt: 13ad14b0154a5fd21d48c1a4555efafd08bdd8c3
+- UsbAttachedActivity.kt: dafc81db1ec82e42fa91c9cbe13954b5d1b0a432
+- UsbReceiver.kt: 077c23e5b0d09904f7c1e201d2d0459d7bbe5ddb
+- AndroidManifest.xml: d1036e60ceec08d51624405e69951dfeaed836d6
+
+This remains a static source audit. No runtime exception has been observed, and no APK has been built or tested in this pass.
