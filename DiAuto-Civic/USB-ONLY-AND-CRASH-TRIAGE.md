@@ -212,3 +212,25 @@ Evidence references (upstream main snapshot):
 - AndroidManifest.xml: d1036e60ceec08d51624405e69951dfeaed836d6
 
 This remains a static source audit. No runtime exception has been observed, and no APK has been built or tested in this pass.
+## Constructor-level follow-up and compatibility correction (2026-11-06)
+
+### What constructor inspection established
+
+- CommManager's constructor initializes an AapSslContext and SingleKeyKeyManager as property initializers. Its constructor does not visibly instantiate UsbNative or call System.loadLibrary in the inspected class prefix. The eager object graph remains undesirable, but native USB loading has not been demonstrated on the Application path from this evidence.
+- UsbNative loads usb1.0 and usbhelper in its companion-object initializer, and each UsbNative instance calls initContext() in its instance initializer. Therefore the critical requirement is to avoid loading/instantiating UsbNative before the USB path actually needs libusb; confirm all construction call sites before changing it.
+- VideoDecoder's constructor has no explicit init block in the inspected class prefix. Its HEVC probe uses MediaCodecList only after an API-21 guard, and its API-31 SOC_MANUFACTURER access is guarded. This reduces the evidence that merely constructing VideoDecoder immediately calls MediaCodecList; however the class still contains newer framework references and its full call graph must be checked before API-17 approval.
+- BaseActivity extends AppCompatActivity and its onCreate reads Configuration.UI_MODE_NIGHT_MASK and observes AppThemeManager.themeVersion. It also wraps the base context through LocaleHelper. The selected AndroidX/AppCompat dependency and theme/resource graph remain a compatibility risk; this source alone does not prove BaseActivity is the crash cause.
+
+### Important correction on service-start compatibility
+
+ContextCompat.startForegroundService is an AndroidX compatibility API and may fall back to startService on platforms before API 26. Do not classify this call alone as a confirmed API-17 crash. The actual API-17 concerns are the platform types/constants referenced directly by AapService, the API-29 foreground-service type overload, and whether the AndroidX Core version selected for the build can run on API 17. The Civic implementation should still provide an explicit legacy service lifecycle and avoid relying on modern foreground-service semantics.
+
+### Refined priorities
+
+1. Highest risk: direct API-21/26/29 framework references retained in AapService and API-24 UserManager references in the declared USB attach Activity; isolate these into version-specific classes.
+2. High risk: Application eagerly creates the full AppComponent graph, including CommManager and decoder objects. Split root registration and session graph construction, then audit constructors and static initializers.
+3. High risk: launcher uses modern AndroidX Activity APIs and Material 3 theme/resources; establish a minimal API-17 launcher before restoring features.
+4. Confirmed product-scope defect: AapService always initializes Wi-Fi Direct/SoftAP/Bluetooth handshake-related managers and calls Wi-Fi auto-start logic, contrary to USB-only requirements.
+5. Not yet established as a crash source: UsbNative loading. The class does load two native libraries when initialized, but the inspected CommManager constructor does not itself instantiate it; map all call sites before asserting it loads at process startup.
+
+All conclusions remain static-source findings. The exact installed APK crash remains undiagnosed without runtime evidence.
