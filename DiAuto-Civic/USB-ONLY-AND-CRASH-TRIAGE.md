@@ -234,3 +234,36 @@ ContextCompat.startForegroundService is an AndroidX compatibility API and may fa
 5. Not yet established as a crash source: UsbNative loading. The class does load two native libraries when initialized, but the inspected CommManager constructor does not itself instantiate it; map all call sites before asserting it loads at process startup.
 
 All conclusions remain static-source findings. The exact installed APK crash remains undiagnosed without runtime evidence.
+## Build configuration and dependency-floor audit (2026-11-06)
+
+### Confirmed Gradle configuration
+
+Upstream app/build.gradle.kts declares compileSdk 36, default minSdk 16, targetSdk 36, NDK 29.0.14206865, and Java/Kotlin bytecode target 1.8. The github flavor inherits minSdk 16; the playstore flavor explicitly raises minSdk to 21. Version is 0.3.12.
+
+Declared runtime dependencies include AndroidX Activity 1.8.2, Fragment 1.6.2, Media 1.6.0, RecyclerView 1.3.2, Material 1.10.0, AppCompat 1.6.1, Startup Runtime 1.1.1, Nearby 19.3.0, Core KTX 1.12.0, Lifecycle ViewModel KTX 2.6.2, Kotlin stdlib 1.9.0, Multidex 2.0.1, Navigation 2.3.5, Glide 4.16.0, Shizuku 13.1.5 and libsu 6.0.0. Conscrypt is flavor-specific: 2.5.3 for github and 2.6.1 for playstore.
+
+### What this does and does not prove
+
+- The github flavor's minSdk=16 is a build declaration, not proof that all resolved AAR manifests, bytecode, resources and native libraries are API-16/17 compatible.
+- The playstore flavor is explicitly not a candidate for the Civic API-17 target because its minSdk is 21.
+- The source build declares compileSdk/targetSdk 36 and a recent NDK, so the Civic variant should not simply inherit the upstream build wholesale.
+- The full resolved dependency graph and each AAR's merged manifest have not been produced in this source-only inspection. Do not claim a particular AndroidX artifact is definitely the crash cause until its actual resolved manifest and bytecode/API usage are inspected.
+- CMake defines usbhelper, imported libusb1.0, hur_soft_hevc and local_hotspot_radio. The presence of these targets does not itself prove they load at startup; map Java/Kotlin load sites and inspect packaged ARMv7 ELF files before attributing a crash.
+
+### Required build-system changes for Civic
+
+1. Add a dedicated civicUsb flavor with minSdk 17 and ABI filter armeabi-v7a; do not reuse playstore or github behavior without checking merged manifests.
+2. Remove Nearby, Wi-Fi, hotspot and wireless-only dependencies from the Civic variant when source separation makes them unnecessary.
+3. Keep Conscrypt only if the AAP TLS path requires it on Android 4.2.2; validate the exact 2.5.3 ARMv7 native binary and TLS provider behavior on API 17.
+4. Generate and inspect the Civic merged manifest and dependency report; treat any dependency whose manifest minSdk exceeds 17 as a blocker unless replaced or proven safely optional.
+5. Build native USB support with an API-17-compatible NDK platform target and inspect each shipped ARMv7 shared object for ELF class, machine, SONAME, NEEDED entries and symbol/API requirements.
+6. Exclude local_hotspot_radio and optional HEVC/FFmpeg binaries from the USB-only package if the selected USB AAP path does not use them; retain only libraries required by the actual code path.
+
+Evidence references (upstream main snapshot):
+- app/build.gradle.kts: 611d79938bcb6367e2d9703449d4583a338023cb
+- root build.gradle.kts: bb6c2d599836a8c0f9ca4bc7a6889207abc945db
+- gradle/wrapper/gradle-wrapper.properties: 9fc21c1d990bac6f7c4ae99895c1fed38cceb3ce
+- app/src/main/cpp/CMakeLists.txt: 834937263243e4b2d09ec10a65d9b038962b3eb5
+- app/src/main/res/values/styles.xml: 8a7355e1c374f37ac4a4cf6b60dd59fbf8b9de9a
+
+This audit records declared configuration only. No dependency resolution, merged-manifest build, native ELF inspection, APK build or device test was performed.
