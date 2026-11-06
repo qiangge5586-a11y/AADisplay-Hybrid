@@ -34,7 +34,8 @@ public final class AoaProtocol {
         PROTOCOL_UNSUPPORTED,
         IDENTITY_TRANSFER_FAILED,
         START_ACKNOWLEDGED,
-        START_DISCONNECT_OR_ERROR
+        START_DISCONNECT_OR_ERROR,
+        USB_IO_ERROR
     }
 
     /**
@@ -73,9 +74,14 @@ public final class AoaProtocol {
         }
 
         byte[] protocol = new byte[2];
-        int received = connection.controlTransfer(
-                UsbConstants.USB_DIR_IN | UsbConstants.USB_TYPE_VENDOR,
-                REQUEST_GET_PROTOCOL, 0, 0, protocol, protocol.length, USB_TIMEOUT_MS);
+        final int received;
+        try {
+            received = connection.controlTransfer(
+                    UsbConstants.USB_DIR_IN | UsbConstants.USB_TYPE_VENDOR,
+                    REQUEST_GET_PROTOCOL, 0, 0, protocol, protocol.length, USB_TIMEOUT_MS);
+        } catch (RuntimeException error) {
+            return SwitchResult.USB_IO_ERROR;
+        }
         if (received != 2) {
             return SwitchResult.PROTOCOL_UNSUPPORTED;
         }
@@ -90,27 +96,37 @@ public final class AoaProtocol {
         };
         for (int index = 0; index < values.length; index++) {
             byte[] payload = encodeIdentityString(values[index]);
-            int sent = connection.controlTransfer(
-                    UsbConstants.USB_TYPE_VENDOR,
-                    REQUEST_SEND_STRING,
-                    0,
-                    index,
-                    payload,
-                    payload.length,
-                    USB_TIMEOUT_MS);
+            final int sent;
+            try {
+                sent = connection.controlTransfer(
+                        UsbConstants.USB_TYPE_VENDOR,
+                        REQUEST_SEND_STRING,
+                        0,
+                        index,
+                        payload,
+                        payload.length,
+                        USB_TIMEOUT_MS);
+            } catch (RuntimeException error) {
+                return SwitchResult.USB_IO_ERROR;
+            }
             if (sent != payload.length) {
                 return SwitchResult.IDENTITY_TRANSFER_FAILED;
             }
         }
 
-        int start = connection.controlTransfer(
-                UsbConstants.USB_TYPE_VENDOR,
-                REQUEST_START,
-                0,
-                0,
-                new byte[0],
-                0,
-                USB_TIMEOUT_MS);
+        final int start;
+        try {
+            start = connection.controlTransfer(
+                    UsbConstants.USB_TYPE_VENDOR,
+                    REQUEST_START,
+                    0,
+                    0,
+                    new byte[0],
+                    0,
+                    USB_TIMEOUT_MS);
+        } catch (RuntimeException error) {
+            return SwitchResult.USB_IO_ERROR;
+        }
         return start >= 0
                 ? SwitchResult.START_ACKNOWLEDGED
                 : SwitchResult.START_DISCONNECT_OR_ERROR;
