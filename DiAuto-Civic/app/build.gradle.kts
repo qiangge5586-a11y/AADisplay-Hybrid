@@ -1,0 +1,30 @@
+plugins {
+    id("com.android.application")
+}
+
+android {
+    namespace = "com.qiangge.diautocivic"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.qiangge.diautocivic"
+        minSdk = 17
+        targetSdk = 28
+        versionCode = 1
+        versionName = "0.1.0-usb-probe"
+        testInstrumentationRunner = "android.test.InstrumentationTestRunner"
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}
