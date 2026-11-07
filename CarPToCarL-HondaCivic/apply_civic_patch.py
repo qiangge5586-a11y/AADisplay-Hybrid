@@ -151,6 +151,16 @@ block = block.replace(
     "val displayHeight =\n                                        setup.displayHeight.takeIf",
     1,
 )
+block = block.replace(
+    "                                            ?: displayWidth\n",
+    "                                            ?: setup.displayWidth\n",
+    1,
+)
+block = block.replace(
+    "                                            ?: displayHeight\n",
+    "                                            ?: setup.displayHeight\n",
+    1,
+)
 text = text[:start] + block + text[end:]
 controller.write_text(text, encoding="utf-8")
 
