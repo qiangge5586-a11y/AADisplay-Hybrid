@@ -38,11 +38,8 @@ jobs:
         with:
           packages: platform-tools platforms;android-34 build-tools;34.0.0
 
-      - name: Check and apply Civic patch
-        working-directory: CarPToCarL-HondaCivic/upstream
-        run: |
-          git apply --check ../honda-civic-v1.2.18.patch
-          git apply ../honda-civic-v1.2.18.patch
+      - name: Apply Civic adaptation
+        run: python3 CarPToCarL-HondaCivic/apply_civic_patch.py
 
       - name: Run unit tests and build debug APK
         working-directory: CarPToCarL-HondaCivic/upstream
