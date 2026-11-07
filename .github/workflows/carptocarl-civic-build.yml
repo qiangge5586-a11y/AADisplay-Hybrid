@@ -45,6 +45,7 @@ jobs:
         working-directory: CarPToCarL-HondaCivic/upstream
         run: |
           sed -i 's#^distributionUrl=.*#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip#' gradle/wrapper/gradle-wrapper.properties
+          sed -i '/^org.gradle.java.home=/d' gradle.properties
 
       - name: Run unit tests and build debug APK
         working-directory: CarPToCarL-HondaCivic/upstream
