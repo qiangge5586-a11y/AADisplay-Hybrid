@@ -41,6 +41,11 @@ jobs:
       - name: Apply Civic adaptation
         run: python3 CarPToCarL-HondaCivic/apply_civic_patch.py
 
+      - name: Normalize upstream Gradle wrapper for Linux CI
+        working-directory: CarPToCarL-HondaCivic/upstream
+        run: |
+          sed -i 's#^distributionUrl=.*#distributionUrl=https\\://services.gradle.org/distributions/gradle-8.10.2-bin.zip#' gradle/wrapper/gradle-wrapper.properties
+
       - name: Run unit tests and build debug APK
         working-directory: CarPToCarL-HondaCivic/upstream
         run: |
