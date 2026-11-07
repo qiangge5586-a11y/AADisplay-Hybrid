@@ -11,9 +11,9 @@ AADisplay-Hybrid root project.
 
 ## Build
 
-The workflow `.github/workflows/carptocarl-civic-build.yml` checks the patch,
-runs `testDebugUnitTest`, builds `assembleDebug`, and uploads the APK as a
-14-day Actions artifact.
+The workflow `.github/workflows/carptocarl-civic-build.yml` runs the anchored
+`apply_civic_patch.py` source transformer, executes `testDebugUnitTest`, builds
+`assembleDebug`, and uploads the APK as a 14-day Actions artifact.
 
 The adaptation is intentionally conservative:
 - Only match an explicit receiver identity containing `Civic`, `思域`, or
