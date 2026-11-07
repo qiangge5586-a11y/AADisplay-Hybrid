@@ -1,0 +1,57 @@
+name: CarPToCarL Honda Civic build
+
+on:
+  push:
+    branches:
+      - carptocarL-civic-v1.2.18
+    paths:
+      - "CarPToCarL-HondaCivic/**"
+      - ".github/workflows/carptocarl-civic-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout integration repository
+        uses: actions/checkout@v4
+
+      - name: Checkout upstream CarPToCarL v1.2.18
+        uses: actions/checkout@v4
+        with:
+          repository: jjuugk/CarPToCarL
+          ref: eb834c4e900c10c569b5942dce87b07dccd3d481
+          path: CarPToCarL-HondaCivic/upstream
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Check and apply Civic patch
+        working-directory: CarPToCarL-HondaCivic/upstream
+        run: |
+          git apply --check ../honda-civic-v1.2.18.patch
+          git apply ../honda-civic-v1.2.18.patch
+
+      - name: Run unit tests and build debug APK
+        working-directory: CarPToCarL-HondaCivic/upstream
+        run: |
+          chmod +x ./gradlew
+          ./gradlew --no-daemon :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CarPToCarL-HondaCivic-v1.2.18-debug
+          path: CarPToCarL-HondaCivic/upstream/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
